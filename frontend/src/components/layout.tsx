@@ -1,18 +1,14 @@
-import type { ReactNode } from "react";
 import { AppSidebar } from "./app-sidebar";
 import { SidebarProvider, SidebarTrigger } from "./ui/sidebar";
+import { Outlet } from "react-router-dom";
 
-type LayoutProps = {
-  children: ReactNode;
-};
-
-export default function Layout({ children }: LayoutProps) {
+export default function Layout() {
   return (
     <SidebarProvider defaultOpen={true}>
       <AppSidebar />
       <main className="flex-1 p-4">
         <SidebarTrigger />
-        {children}
+        <Outlet />
       </main>
     </SidebarProvider>
   );

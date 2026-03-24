@@ -8,11 +8,10 @@ import {
   SidebarMenu,
   SidebarMenuButton,
   SidebarMenuItem,
-  SidebarRail,
-  SidebarSeparator,
 } from "@/components/ui/sidebar";
 import { NavUser } from "./nav-user";
 import { Separator } from "./ui/separator";
+import { Link, useLocation } from "react-router-dom";
 
 const data = {
   user: {
@@ -24,41 +23,42 @@ const data = {
   navMain: [
     {
       title: "Overview",
-      url: "#",
+      url: "/",
     },
     {
       title: "All Users",
-      url: "#",
+      url: "/users",
     },
     {
       title: "Active Users",
-      url: "#",
+      url: "/active-users",
     },
     {
       title: "All Models",
-      url: "#",
+      url: "/models",
     },
     {
       title: "Plugins",
-      url: "#",
+      url: "/plugins",
     },
     {
-      title: "ACC / BIM 360",
-      url: "#",
+      title: "Cloud Data",
+      url: "/cloud-data",
     },
   ],
 };
 
 export function AppSidebar() {
+  const { pathname } = useLocation();
   return (
     <Sidebar variant="floating">
       <SidebarHeader>
         <SidebarMenu>
           <SidebarMenuItem>
             <SidebarMenuButton size="lg" asChild>
-              <a href="#">
+              <Link to="/">
                 <div className="truncate font-bold text-2xl">CBT Vision</div>
-              </a>
+              </Link>
             </SidebarMenuButton>
           </SidebarMenuItem>
           <Separator />
@@ -68,13 +68,22 @@ export function AppSidebar() {
         <SidebarGroup />
         <SidebarGroupContent>
           <SidebarMenu>
-            {data.navMain.map((item) => (
-              <SidebarMenuItem key={item.title}>
-                <SidebarMenuButton className="px-5" asChild>
-                  <a href={item.url}>{item.title}</a>
-                </SidebarMenuButton>
-              </SidebarMenuItem>
-            ))}
+            {data.navMain.map((item) => {
+              const isActive =
+                pathname === item.url ||
+                (item.url !== "/" && pathname.startsWith(item.url + "/"));
+              return (
+                <SidebarMenuItem key={item.title}>
+                  <SidebarMenuButton
+                    className="px-5"
+                    isActive={isActive}
+                    asChild
+                  >
+                    <Link to={item.url}>{item.title}</Link>
+                  </SidebarMenuButton>
+                </SidebarMenuItem>
+              );
+            })}
           </SidebarMenu>
         </SidebarGroupContent>
         <SidebarGroup />
