@@ -27,7 +27,7 @@ export const getSesisonsCount = async (filters: SessionFilters) => {
 };
 export const getSessions = async (filters: SessionFilters) => {
   const query = buildSessionFilters(filters);
-  const limit = filters.limit ?? 5;
+  const limit = filters.limit ?? 10;
   const session = await RevitSession.find(query)
     .sort({ dateTime: -1 })
     .limit(limit);
