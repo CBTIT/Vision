@@ -45,6 +45,14 @@ const data = {
       title: "Cloud Data",
       url: "/cloud-data",
     },
+    {
+      title: "Sessions",
+      url: "/sessions",
+    },
+    {
+      title: "Syncs",
+      url: "/syncs",
+    },
   ],
 };
 

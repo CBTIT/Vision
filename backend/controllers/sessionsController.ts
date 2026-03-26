@@ -16,11 +16,13 @@ export const getSessionsController = async (req: Request, res: Response) => {
   try {
     const filters = {
       limit: Number(req.query.limit) || undefined,
+      page: Number(req.query.page) || undefined,
       from: (req.query.from as string) || undefined,
       to: (req.query.to as string) || undefined,
+      autodeskUserName: (req.query.autodeskUserName as string) || undefined,
     };
     const sessions = await getSessions(filters);
-    res.json({ sessions: sessions });
+    res.json(sessions);
   } catch (err) {
     console.error("Error getting sessions:", err);
     res.status(500).json({ error: "Failed to get sessions" });

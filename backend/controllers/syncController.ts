@@ -18,11 +18,13 @@ export const getSyncsController = async (req: Request, res: Response) => {
   try {
     const filters = {
       limit: Number(req.query.limit) || undefined,
+      page: Number(req.query.page) || undefined,
       from: (req.query.from as string) || undefined,
       to: (req.query.to as string) || undefined,
+      autodeskUserName: (req.query.autodeskUserName as string) || undefined,
     };
     const syncs = await getSyncs(filters);
-    res.json({ syncs: syncs });
+    res.json(syncs);
   } catch (err) {
     console.error("Error getting syncs:", err);
     res.status(500).json({ error: "Error getting syncs" });

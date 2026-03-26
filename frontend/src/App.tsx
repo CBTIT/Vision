@@ -6,6 +6,7 @@ import CloudData from "./components/cloudData";
 import Plugins from "./components/plugins";
 import AllModels from "./components/alModels";
 import ActiveUsers from "./components/activeUsers";
+import SessionsSyncsPage from "./components/sessions-syncs";
 
 function App() {
   return (
@@ -17,6 +18,11 @@ function App() {
         <Route path="models" element={<AllModels />} />
         <Route path="plugins" element={<Plugins />} />
         <Route path="cloud-data" element={<CloudData />} />
+        <Route
+          path="sessions"
+          element={<SessionsSyncsPage mode="sessions" />}
+        />
+        <Route path="syncs" element={<SessionsSyncsPage mode="syncs" />} />
       </Route>
     </Routes>
   );

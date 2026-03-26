@@ -1,15 +1,16 @@
 import { useEffect, useMemo, useState } from "react";
 import { format } from "date-fns";
-import { X } from "lucide-react";
+import { ChevronLeft, ChevronRight } from "lucide-react";
 
 import { useHeaderRight } from "./header-context";
+import { DateRangeFilter } from "./date-range-filter";
+import { useDateRange } from "./date-range-context";
 import {
-  fetchUsersSummary,
   fetchSessionsList,
   fetchSyncsList,
+  type PaginatedListResponse,
   type SessionListItem,
   type SyncListItem,
-  type UserSummaryItem,
 } from "@/lib/api";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Skeleton } from "@/components/ui/skeleton";
@@ -22,7 +23,8 @@ import {
   SheetTitle,
 } from "@/components/ui/sheet";
 
-type DetailMode = "session" | "sync";
+type Mode = "sessions" | "syncs";
+type PageToken = number | "left-ellipsis" | "right-ellipsis";
 type SyncTimelineItem = {
   syncId: string;
   time: string;
@@ -41,6 +43,23 @@ function isCrashSession(item: SessionListItem | null): boolean {
   return false;
 }
 
+function buildPageTokens(currentPage: number, totalPages: number): PageToken[] {
+  if (totalPages <= 7) {
+    return Array.from({ length: totalPages }, (_, index) => index + 1);
+  }
+
+  const tokens: PageToken[] = [1];
+  const start = Math.max(2, currentPage - 1);
+  const end = Math.min(totalPages - 1, currentPage + 1);
+
+  if (start > 2) tokens.push("left-ellipsis");
+  for (let page = start; page <= end; page += 1) tokens.push(page);
+  if (end < totalPages - 1) tokens.push("right-ellipsis");
+
+  tokens.push(totalPages);
+  return tokens;
+}
+
 function toTitle(key: string) {
   return key
     .replace(/([A-Z])/g, " $1")
@@ -48,29 +67,6 @@ function toTitle(key: string) {
     .replace(/\s+/g, " ")
     .trim()
     .replace(/^./, (char) => char.toUpperCase());
-}
-
-function formatFieldValue(key: string, value: unknown): string {
-  if (value === null || value === undefined || value === "") return "-";
-  if (Array.isArray(value)) {
-    if (value.length === 0) return "-";
-    return value.map((entry) => formatFieldValue(key, entry)).join(", ");
-  }
-  if (typeof value === "object") return JSON.stringify(value);
-  if (typeof value === "number") return value.toLocaleString();
-  if (typeof value === "boolean") return value ? "Yes" : "No";
-  if (typeof value === "string") {
-    const looksLikeDate =
-      key.toLowerCase().includes("date") || key.toLowerCase().includes("time");
-    if (looksLikeDate) {
-      const parsed = new Date(value);
-      if (!Number.isNaN(parsed.getTime())) {
-        return format(parsed, "dd MMM yyyy, hh:mm a");
-      }
-    }
-    return value;
-  }
-  return String(value);
 }
 
 function formatDateTime(value: string): string {
@@ -102,6 +98,29 @@ function formatTimeAndDateParts(
     time: formatFieldValue(key, value),
     date: "",
   };
+}
+
+function formatFieldValue(key: string, value: unknown): string {
+  if (value === null || value === undefined || value === "") return "-";
+  if (Array.isArray(value)) {
+    if (value.length === 0) return "-";
+    return value.map((entry) => formatFieldValue(key, entry)).join(", ");
+  }
+  if (typeof value === "object") {
+    return JSON.stringify(value);
+  }
+  if (typeof value === "number") return value.toLocaleString();
+  if (typeof value === "boolean") return value ? "Yes" : "No";
+  if (typeof value === "string") {
+    const looksLikeDate =
+      key.toLowerCase().includes("date") || key.toLowerCase().includes("time");
+    if (looksLikeDate) {
+      return formatDateTime(value);
+    }
+    return value;
+  }
+
+  return String(value);
 }
 
 function formatSecondsToHms(value: unknown): string {
@@ -176,7 +195,13 @@ function TimeWithDate({ value }: { value: { time: string; date: string } }) {
   );
 }
 
-function SyncTimeline({ timeline }: { timeline: SyncTimelineItem[] }) {
+function SyncTimeline({
+  timeline,
+  compact = false,
+}: {
+  timeline: SyncTimelineItem[];
+  compact?: boolean;
+}) {
   if (timeline.length === 0) {
     return (
       <p className="text-xs text-muted-foreground">
@@ -186,7 +211,7 @@ function SyncTimeline({ timeline }: { timeline: SyncTimelineItem[] }) {
   }
 
   return (
-    <div className="space-y-3">
+    <div className={compact ? "space-y-2" : "space-y-3"}>
       {timeline.map((sync, index) => (
         <div key={sync.syncId} className="relative pl-7">
           <span className="absolute left-2 top-2 h-2.5 w-2.5 rounded-full bg-violet-400 ring-2 ring-violet-100" />
@@ -195,7 +220,13 @@ function SyncTimeline({ timeline }: { timeline: SyncTimelineItem[] }) {
           )}
 
           <div className="rounded-md border bg-muted/10 px-3 py-2">
-            <p className="text-sm font-semibold">Sync {index + 1}</p>
+            <p
+              className={
+                compact ? "text-xs font-semibold" : "text-sm font-semibold"
+              }
+            >
+              Sync {index + 1}
+            </p>
             <p className="text-xs text-muted-foreground mt-0.5">
               {formatDateTime(sync.time)}
             </p>
@@ -216,206 +247,228 @@ function SyncTimeline({ timeline }: { timeline: SyncTimelineItem[] }) {
   );
 }
 
-function UserSummaryCard({
+function SessionCard({
   item,
   onClick,
-  isSelected,
+  syncsExpanded,
+  onToggleSyncs,
 }: {
-  item: UserSummaryItem;
+  item: SessionListItem;
   onClick: () => void;
-  isSelected: boolean;
+  syncsExpanded: boolean;
+  onToggleSyncs: () => void;
 }) {
-  const displayName = item.fullName?.trim() || item.autodeskUserName;
-  const lastActiveLabel = item.lastActiveAt
-    ? format(new Date(item.lastActiveAt), "dd MMM yyyy, hh:mm a")
-    : "-";
+  const syncTimeline = item.syncTimeline ?? [];
+  const syncCount = item.syncCount ?? syncTimeline.length;
+  const crash = isCrashSession(item);
+  const averageSyncGapLabel = useMemo(() => {
+    if (syncCount < 2) return null;
+
+    const gaps = syncTimeline
+      .map((entry) => entry.gapMinutesFromPrevious)
+      .filter((gap): gap is number => typeof gap === "number" && gap >= 0);
+
+    if (gaps.length === 0) return null;
+
+    const average = gaps.reduce((sum, gap) => sum + gap, 0) / gaps.length;
+    return `${average.toFixed(1)} min`;
+  }, [syncCount, syncTimeline]);
 
   return (
     <Card
-      onClick={onClick}
-      className={`cursor-pointer border-border/90 bg-background/95 shadow-sm transition-colors ${
-        isSelected ? "ring-2 ring-blue-400/70" : "hover:bg-muted/30"
+      className={`w-full cursor-pointer transition-colors ${
+        crash
+          ? "border-rose-300 bg-rose-50/60 hover:bg-rose-100/60"
+          : "hover:bg-muted/30"
       }`}
+      onClick={onClick}
     >
-      <CardHeader className="pb-2">
-        <CardTitle className="truncate text-sm font-semibold">
-          {displayName}
-        </CardTitle>
-        <p className="truncate text-xs text-muted-foreground">
-          @{item.autodeskUserName}
-        </p>
-        {item.pluginVersions.length > 0 && (
-          <div className="mt-2 flex flex-wrap gap-1.5">
-            {item.pluginVersions.map((version) => (
-              <span
-                key={version}
-                className="inline-flex rounded-full border border-amber-300 bg-amber-50 px-2 py-0.5 text-[11px] font-medium text-amber-800"
-              >
-                v{version}
-              </span>
-            ))}
+      <CardContent className="py-4">
+        <div className="grid gap-3 md:grid-cols-4">
+          <div>
+            <p className="text-xs text-muted-foreground">Project</p>
+            <p className="font-medium truncate">
+              {item.cloudProjectName || item.projectId || "Unknown project"}
+            </p>
           </div>
-        )}
-      </CardHeader>
-      <CardContent className="space-y-2 pt-0">
-        <div className="flex items-center justify-between text-sm">
-          <span className="text-muted-foreground">Sessions</span>
-          <span className="font-semibold tabular-nums">
-            {item.sessionsCount}
-          </span>
+          <div>
+            <p className="text-xs text-muted-foreground">Model</p>
+            <p className="font-medium truncate">
+              {item.fileName || item.modelId || "Unknown model"}
+            </p>
+          </div>
+          <div>
+            <p className="text-xs text-muted-foreground">User</p>
+            <p className="font-medium truncate">
+              {item.fullName || item.autodeskUserName || "Unknown user"}
+            </p>
+            {item.fullName && item.autodeskUserName && (
+              <p className="text-xs text-muted-foreground truncate">
+                @{item.autodeskUserName}
+              </p>
+            )}
+          </div>
+          <div>
+            <p className="text-xs text-muted-foreground">Date</p>
+            <p className="font-medium">
+              {item.dateTime ? formatDateTime(item.dateTime) : "-"}
+            </p>
+          </div>
         </div>
-        <div className="flex items-center justify-between text-sm">
-          <span className="text-muted-foreground">Syncs</span>
-          <span className="font-semibold tabular-nums">{item.syncsCount}</span>
-        </div>
-        <div className="flex items-center justify-between text-sm">
-          <span className="text-muted-foreground">Plugin Use</span>
-          <span className="font-semibold tabular-nums">
-            {item.pluginUseCount}
-          </span>
-        </div>
-        <div className="flex items-center justify-between gap-2 text-sm">
-          <span className="text-muted-foreground">Last Active</span>
-          <span className="truncate font-semibold tabular-nums">
-            {lastActiveLabel}
-          </span>
+
+        <div className="mt-4 border-t pt-3">
+          {averageSyncGapLabel && (
+            <p className="mb-2 text-xs text-muted-foreground">
+              Average Sync Gap: {averageSyncGapLabel}
+            </p>
+          )}
+
+          {syncCount > 0 ? (
+            <button
+              type="button"
+              onClick={(event) => {
+                event.stopPropagation();
+                onToggleSyncs();
+              }}
+              className="flex items-center gap-2 text-sm font-medium text-foreground hover:underline"
+            >
+              Syncs: {syncCount}
+              <span className="text-xs text-muted-foreground">
+                ({syncsExpanded ? "Hide details" : "Show details"})
+              </span>
+            </button>
+          ) : (
+            <p className="text-sm font-medium text-muted-foreground">
+              Syncs: 0
+            </p>
+          )}
+
+          {syncCount > 0 && syncsExpanded && (
+            <div className="mt-3 rounded-lg border bg-background p-3">
+              <SyncTimeline timeline={syncTimeline} compact />
+            </div>
+          )}
         </div>
       </CardContent>
     </Card>
   );
 }
 
-export default function AllUsers() {
+function SyncCard({
+  item,
+  onClick,
+}: {
+  item: SyncListItem;
+  onClick: () => void;
+}) {
+  return (
+    <Card
+      className="w-full cursor-pointer transition-colors hover:bg-muted/30"
+      onClick={onClick}
+    >
+      <CardContent className="py-4">
+        <div className="grid gap-3 md:grid-cols-4">
+          <div>
+            <p className="text-xs text-muted-foreground">Project</p>
+            <p className="font-medium truncate">
+              {item.projectId || "Unknown project"}
+            </p>
+          </div>
+          <div>
+            <p className="text-xs text-muted-foreground">Model</p>
+            <p className="font-medium truncate">
+              {item.fileName || item.modelId || "Unknown model"}
+            </p>
+          </div>
+          <div>
+            <p className="text-xs text-muted-foreground">User</p>
+            <p className="font-medium truncate">
+              {item.fullName || item.autodeskUserName || "Unknown user"}
+            </p>
+            {item.fullName && item.autodeskUserName && (
+              <p className="text-xs text-muted-foreground truncate">
+                @{item.autodeskUserName}
+              </p>
+            )}
+          </div>
+          <div>
+            <p className="text-xs text-muted-foreground">Date</p>
+            <p className="font-medium">
+              {item.date ? formatDateTime(item.date) : "-"}
+            </p>
+          </div>
+        </div>
+      </CardContent>
+    </Card>
+  );
+}
+
+export default function SessionsSyncsPage({ mode }: { mode: Mode }) {
+  const title = mode === "sessions" ? "Sessions" : "Syncs";
   const setHeaderRight = useHeaderRight();
+  const { from, to } = useDateRange();
+
   const [loading, setLoading] = useState(true);
-  const [items, setItems] = useState<UserSummaryItem[]>([]);
-
-  const [selectedUser, setSelectedUser] = useState<UserSummaryItem | null>(
-    null,
-  );
-  const [renderedUser, setRenderedUser] = useState<UserSummaryItem | null>(
-    null,
-  );
-  const [activityCardOpen, setActivityCardOpen] = useState(false);
-  const [activityLoading, setActivityLoading] = useState(false);
-  const [userSessions, setUserSessions] = useState<SessionListItem[]>([]);
-  const [userSyncs, setUserSyncs] = useState<SyncListItem[]>([]);
-
-  const [detailOpen, setDetailOpen] = useState(false);
-  const [detailMode, setDetailMode] = useState<DetailMode>("session");
-  const [detailItem, setDetailItem] = useState<
+  const [page, setPage] = useState(1);
+  const [limit] = useState(10);
+  const [data, setData] = useState<
+    PaginatedListResponse<SessionListItem | SyncListItem>
+  >({
+    items: [],
+    total: 0,
+    page: 1,
+    limit: 10,
+    totalPages: 1,
+  });
+  const [selectedItem, setSelectedItem] = useState<
     SessionListItem | SyncListItem | null
   >(null);
+  const [detailsOpen, setDetailsOpen] = useState(false);
   const [showMoreDetails, setShowMoreDetails] = useState(false);
+  const [expandedSyncsBySessionId, setExpandedSyncsBySessionId] = useState<
+    Record<string, boolean>
+  >({});
+
+  const fromStr = format(from, "yyyy-MM-dd");
+  const toStr = format(to, "yyyy-MM-dd");
 
   useEffect(() => {
-    setHeaderRight(null);
+    setHeaderRight(<DateRangeFilter />);
     return () => setHeaderRight(null);
   }, [setHeaderRight]);
 
   useEffect(() => {
-    setLoading(true);
-    fetchUsersSummary()
-      .then((result) => setItems(result.items))
-      .catch(() => setItems([]))
-      .finally(() => setLoading(false));
-  }, []);
-
-  async function loadUserActivity(user: UserSummaryItem) {
-    const isNewSelection =
-      selectedUser?.autodeskUserName !== user.autodeskUserName;
-    setSelectedUser(user);
-    setRenderedUser(user);
-    if (isNewSelection) {
-      setActivityCardOpen(false);
-      requestAnimationFrame(() => setActivityCardOpen(true));
-    } else {
-      setActivityCardOpen(true);
-    }
-    setActivityLoading(true);
-
-    try {
-      const [sessionsResult, syncsResult] = await Promise.all([
-        fetchSessionsList({
-          page: 1,
-          limit: 500,
-          autodeskUserName: user.autodeskUserName,
-        }),
-        fetchSyncsList({
-          page: 1,
-          limit: 500,
-          autodeskUserName: user.autodeskUserName,
-        }),
-      ]);
-
-      setUserSessions(sessionsResult.items);
-      setUserSyncs(syncsResult.items);
-    } catch {
-      setUserSessions([]);
-      setUserSyncs([]);
-    } finally {
-      setActivityLoading(false);
-    }
-  }
-
-  function closeUserActivity() {
-    setActivityCardOpen(false);
-    window.setTimeout(() => {
-      setSelectedUser(null);
-      setRenderedUser(null);
-    }, 180);
-  }
-
-  const subtitle = useMemo(
-    () => `${items.length} unique Autodesk users`,
-    [items],
-  );
-
-  const uniqueProjects = useMemo(() => {
-    const seen = new Set<string>();
-    const projects: string[] = [];
-    for (const session of userSessions) {
-      const name =
-        (session.cloudProjectName as string | undefined) ??
-        (session.projectId as string | undefined);
-      if (name && !seen.has(name)) {
-        seen.add(name);
-        projects.push(name);
-      }
-    }
-    return projects;
-  }, [userSessions]);
+    setPage(1);
+    setDetailsOpen(false);
+    setSelectedItem(null);
+    setShowMoreDetails(false);
+    setExpandedSyncsBySessionId({});
+  }, [mode, fromStr, toStr]);
 
   useEffect(() => {
     setShowMoreDetails(false);
-  }, [detailMode, detailItem, detailOpen]);
+  }, [selectedItem, detailsOpen, mode]);
 
-  const detailFields = useMemo(() => {
-    if (!detailItem) return [] as Array<{ label: string; value: string }>;
-    const hidden = new Set(["__v", "syncDatabaseIds"]);
-    return Object.entries(detailItem)
+  const selectedSessionTimeline = useMemo(() => {
+    if (mode !== "sessions") return [] as SyncTimelineItem[];
+    if (!selectedItem) return [] as SyncTimelineItem[];
+    const timeline = (selectedItem as SessionListItem).syncTimeline;
+    return Array.isArray(timeline) ? timeline : [];
+  }, [mode, selectedItem]);
+
+  const displayFields = useMemo(() => {
+    if (!selectedItem) return [] as Array<{ label: string; value: string }>;
+    const hidden = new Set(["__v", "syncTimeline", "syncDatabaseIds"]);
+    return Object.entries(selectedItem)
       .filter(([key]) => !hidden.has(key))
       .map(([key, value]) => ({
         label: toTitle(key),
         value: formatFieldValue(key, value),
       }));
-  }, [detailItem]);
-
-  const selectedSession =
-    detailMode === "session" ? (detailItem as SessionListItem | null) : null;
-  const selectedSessionIsCrash = useMemo(
-    () => isCrashSession(selectedSession),
-    [selectedSession],
-  );
-
-  const selectedSessionTimeline = useMemo(() => {
-    if (!selectedSession) return [] as SyncTimelineItem[];
-    const timeline = selectedSession.syncTimeline;
-    return Array.isArray(timeline) ? timeline : [];
-  }, [selectedSession]);
+  }, [selectedItem]);
 
   const sessionPrimaryFields = useMemo(() => {
-    if (!selectedSession) {
+    if (mode !== "sessions" || !selectedItem) {
       return {
         projectName: "-",
         fileName: "-",
@@ -424,29 +477,24 @@ export default function AllUsers() {
       };
     }
 
+    const session = selectedItem as SessionListItem;
     const projectName =
-      (typeof selectedSession.cloudProjectName === "string" &&
-        selectedSession.cloudProjectName) ||
-      (typeof selectedSession.projectId === "string" &&
-        selectedSession.projectId) ||
+      (typeof session.cloudProjectName === "string" &&
+        session.cloudProjectName) ||
+      (typeof session.projectId === "string" && session.projectId) ||
       "-";
     const fileName =
-      (typeof selectedSession.fileName === "string" &&
-        selectedSession.fileName) ||
-      (typeof selectedSession.modelId === "string" &&
-        selectedSession.modelId) ||
+      (typeof session.fileName === "string" && session.fileName) ||
+      (typeof session.modelId === "string" && session.modelId) ||
       "-";
-    const fileSize = formatFileSizeMb(selectedSession.fileSize);
-    const revitVersion = formatFieldValue(
-      "revitVersion",
-      selectedSession.revitVersion,
-    );
+    const fileSize = formatFileSizeMb(session.fileSize);
+    const revitVersion = formatFieldValue("revitVersion", session.revitVersion);
 
     return { projectName, fileName, fileSize, revitVersion };
-  }, [selectedSession]);
+  }, [mode, selectedItem]);
 
   const sessionGroupedFields = useMemo(() => {
-    if (!selectedSession) {
+    if (mode !== "sessions" || !selectedItem) {
       return {
         startTime: { time: "-", date: "" },
         endTime: { time: "-", date: "" },
@@ -459,52 +507,42 @@ export default function AllUsers() {
       };
     }
 
+    const session = selectedItem as SessionListItem;
     return {
       startTime: formatTimeAndDateParts(
         "openingStartTime",
-        selectedSession.openingStartTime,
+        session.openingStartTime,
       ),
-      endTime: formatTimeAndDateParts(
-        "openingEndTime",
-        selectedSession.openingEndTime,
-      ),
+      endTime: formatTimeAndDateParts("openingEndTime", session.openingEndTime),
       readyTime: formatTimeAndDateParts(
         "openingReadyTime",
-        selectedSession.openingReadyTime,
+        session.openingReadyTime,
       ),
-      openingGap: formatSecondsSuffix(selectedSession.openingGap),
-      openingDuration: formatSecondsSuffix(selectedSession.openingDuration),
-      totalOpeningDuration: formatSecondsSuffix(
-        selectedSession.totalOpeningDuration,
-      ),
-      closing: formatTimeAndDateParts(
-        "closingTime",
-        selectedSession.closingTime,
-      ),
-      sessionDuration: formatSecondsToHms(selectedSession.sessionDuration),
+      openingGap: formatSecondsSuffix(session.openingGap),
+      openingDuration: formatSecondsSuffix(session.openingDuration),
+      totalOpeningDuration: formatSecondsSuffix(session.totalOpeningDuration),
+      closing: formatTimeAndDateParts("closingTime", session.closingTime),
+      sessionDuration: formatSecondsToHms(session.sessionDuration),
     };
-  }, [selectedSession]);
+  }, [mode, selectedItem]);
 
   const sessionModelDetails = useMemo(() => {
-    if (!selectedSession) {
+    if (mode !== "sessions" || !selectedItem) {
       return {
         warningCount: "-",
         openWorksetNames: [] as string[],
-        openWorksetCountLabel: "-",
       };
     }
 
-    const warningCount = formatFieldValue(
-      "warningCount",
-      selectedSession.warningCount,
-    );
-    const openWorksetNames = Array.isArray(selectedSession.openWorksetNames)
-      ? selectedSession.openWorksetNames
+    const session = selectedItem as SessionListItem;
+    const warningCount = formatFieldValue("warningCount", session.warningCount);
+    const openWorksetNames = Array.isArray(session.openWorksetNames)
+      ? session.openWorksetNames
           .map((name) => String(name).trim())
           .filter((name) => name.length > 0)
       : [];
 
-    const rawOpenWorksetCount = selectedSession.openWorksetCount;
+    const rawOpenWorksetCount = session.openWorksetCount;
     let openWorksetCountLabel = "-";
     if (typeof rawOpenWorksetCount === "string" && rawOpenWorksetCount.trim()) {
       openWorksetCountLabel = rawOpenWorksetCount.trim();
@@ -519,10 +557,12 @@ export default function AllUsers() {
     }
 
     return { warningCount, openWorksetNames, openWorksetCountLabel };
-  }, [selectedSession]);
+  }, [mode, selectedItem]);
 
   const sessionRemainingFields = useMemo(() => {
-    if (!selectedSession) return [] as Array<{ label: string; value: string }>;
+    if (mode !== "sessions" || !selectedItem) {
+      return [] as Array<{ label: string; value: string }>;
+    }
 
     const hidden = new Set([
       "__v",
@@ -562,64 +602,59 @@ export default function AllUsers() {
       "openWorksetNames",
     ]);
 
-    return Object.entries(selectedSession)
+    return Object.entries(selectedItem)
       .filter(([key]) => !hidden.has(key))
       .map(([key, value]) => ({
         label: toTitle(key),
         value: formatFieldValue(key, value),
       }));
-  }, [selectedSession]);
+  }, [mode, selectedItem]);
 
   const sessionShowMoreFields = useMemo(() => {
-    if (!selectedSession) return [] as Array<{ label: string; value: string }>;
+    if (mode !== "sessions" || !selectedItem) {
+      return [] as Array<{ label: string; value: string }>;
+    }
 
+    const session = selectedItem as SessionListItem;
     const fields: Array<{ key: string; label: string; value: unknown }> = [
-      { key: "_id", label: "ID", value: selectedSession._id },
+      { key: "_id", label: "ID", value: session._id },
       {
         key: "deviceUserName",
         label: "Device Username",
-        value: selectedSession.deviceUserName,
+        value: session.deviceUserName,
       },
-      {
-        key: "deviceName",
-        label: "Device Name",
-        value: selectedSession.deviceName,
-      },
+      { key: "deviceName", label: "Device Name", value: session.deviceName },
       {
         key: "networkConnectionType",
         label: "Connection Type",
-        value: selectedSession.networkConnectionType,
+        value: session.networkConnectionType,
       },
       {
         key: "localIPAddress",
         label: "IP Address",
-        value: selectedSession.localIPAddress,
+        value: session.localIPAddress,
       },
       {
         key: "cbtAssemblyVersion",
         label: "Assembly Version",
-        value: selectedSession.cbtAssemblyVersion,
+        value: session.cbtAssemblyVersion,
       },
       {
         key: "cloudPlatform",
         label: "Autodesk Platform",
-        value: selectedSession.cloudPlatform,
+        value: session.cloudPlatform,
       },
-      { key: "filePath", label: "File Path", value: selectedSession.filePath },
+      { key: "filePath", label: "File Path", value: session.filePath },
       {
         key: "deviceFreeSpace",
         label: "Device Free Space",
-        value: selectedSession.deviceFreeSpace,
+        value: session.deviceFreeSpace,
       },
-      {
-        key: "crashStatus",
-        label: "Crash",
-        value: selectedSession.crashStatus,
-      },
+      { key: "crashStatus", label: "Crash", value: session.crashStatus },
       {
         key: "missingReferences",
         label: "Missing References",
-        value: selectedSession.missingReferences,
+        value: session.missingReferences,
       },
     ];
 
@@ -629,24 +664,114 @@ export default function AllUsers() {
         label: field.label,
         value: formatFieldValue(field.key, field.value),
       }));
-  }, [selectedSession]);
+  }, [mode, selectedItem]);
 
-  const hasActivityCard = renderedUser !== null;
+  useEffect(() => {
+    setLoading(true);
+
+    const request =
+      mode === "sessions"
+        ? fetchSessionsList({ from: fromStr, to: toStr, page, limit })
+        : fetchSyncsList({ from: fromStr, to: toStr, page, limit });
+
+    request
+      .then((result) =>
+        setData(
+          result as PaginatedListResponse<SessionListItem | SyncListItem>,
+        ),
+      )
+      .catch(() =>
+        setData({ items: [], total: 0, page: 1, limit, totalPages: 1 }),
+      )
+      .finally(() => setLoading(false));
+  }, [mode, fromStr, toStr, page, limit]);
+
+  const subtitle = useMemo(() => {
+    const fromLabel = format(from, "dd MMM yyyy");
+    const toLabel = format(to, "dd MMM yyyy");
+    return fromLabel === toLabel ? fromLabel : `${fromLabel} - ${toLabel}`;
+  }, [from, to]);
+
+  const pageTokens = useMemo(
+    () => buildPageTokens(data.page, data.totalPages),
+    [data.page, data.totalPages],
+  );
+  const selectedSessionIsCrash = useMemo(() => {
+    if (mode !== "sessions") return false;
+    return isCrashSession(selectedItem as SessionListItem | null);
+  }, [mode, selectedItem]);
 
   return (
-    <div className="space-y-4">
+    <div className="flex h-full min-h-0 flex-col gap-4 overflow-hidden px-1 py-1">
       <Card className="shrink-0 border-border/90 bg-background/95 shadow-sm">
         <CardHeader className="pb-3">
-          <CardTitle>All Users</CardTitle>
-          <p className="text-xs text-muted-foreground">{subtitle}</p>
+          <div className="flex flex-wrap items-center justify-between gap-3">
+            <div>
+              <CardTitle>{title}</CardTitle>
+              <p className="text-xs text-muted-foreground">
+                {subtitle} • {data.total} total • Page {data.page} of{" "}
+                {data.totalPages}
+              </p>
+            </div>
+            <div className="flex items-center gap-1.5">
+              <Button
+                variant="outline"
+                size="sm"
+                className="h-8 w-8 p-0"
+                type="button"
+                onClick={() => setPage((current) => Math.max(1, current - 1))}
+                disabled={loading || data.page <= 1}
+                aria-label="Previous page"
+              >
+                <ChevronLeft className="size-4" />
+              </Button>
+
+              {pageTokens.map((token, index) =>
+                typeof token === "number" ? (
+                  <Button
+                    key={token}
+                    variant={token === data.page ? "default" : "outline"}
+                    size="sm"
+                    className="h-8 min-w-8 px-2"
+                    type="button"
+                    onClick={() => setPage(token)}
+                    disabled={loading}
+                  >
+                    {token}
+                  </Button>
+                ) : (
+                  <span
+                    key={`${token}-${index}`}
+                    className="px-1 text-sm text-muted-foreground"
+                  >
+                    ...
+                  </span>
+                ),
+              )}
+
+              <Button
+                variant="outline"
+                size="sm"
+                className="h-8 w-8 p-0"
+                type="button"
+                onClick={() =>
+                  setPage((current) => Math.min(data.totalPages, current + 1))
+                }
+                disabled={loading || data.page >= data.totalPages}
+                aria-label="Next page"
+              >
+                <ChevronRight className="size-4" />
+              </Button>
+            </div>
+          </div>
         </CardHeader>
       </Card>
 
-      <Sheet open={detailOpen} onOpenChange={setDetailOpen}>
+      <Sheet open={detailsOpen} onOpenChange={setDetailsOpen}>
         <SheetContent
           side="right"
           className={`sm:max-w-xl w-[92vw] overflow-y-auto ${
-            detailMode === "session" && selectedSessionIsCrash
+            mode === "sessions" && selectedSessionIsCrash
               ? "border-rose-200 bg-rose-50"
               : ""
           }`}
@@ -655,20 +780,20 @@ export default function AllUsers() {
             <SheetTitle>
               <span className="inline-flex items-center gap-2">
                 <span>
-                  {detailMode === "session"
-                    ? "Session Details"
-                    : "Sync Details"}
+                  {mode === "sessions" ? "Session Details" : "Sync Details"}
                 </span>
-                {detailMode === "session" && selectedSessionIsCrash && (
+                {mode === "sessions" && selectedSessionIsCrash && (
                   <span className="inline-flex items-center rounded-full border border-rose-300 bg-rose-100 px-2 py-0.5 text-[11px] font-semibold uppercase tracking-wide text-rose-700">
                     Crash
                   </span>
                 )}
               </span>
             </SheetTitle>
-            {detailMode === "sync" && (
+            {mode === "syncs" && (
               <SheetDescription>
-                {detailItem?.fullName || detailItem?.autodeskUserName || "User"}
+                {selectedItem?.fullName ||
+                  selectedItem?.autodeskUserName ||
+                  "User"}
               </SheetDescription>
             )}
           </SheetHeader>
@@ -677,18 +802,18 @@ export default function AllUsers() {
             <div className="rounded-lg border bg-muted/20 p-3">
               <p className="text-xs text-muted-foreground">User</p>
               <p className="mt-1 text-lg font-bold leading-tight wrap-break-word">
-                {detailItem?.fullName ||
-                  detailItem?.autodeskUserName ||
+                {selectedItem?.fullName ||
+                  selectedItem?.autodeskUserName ||
                   "Unknown user"}
               </p>
-              {detailItem?.fullName && detailItem?.autodeskUserName && (
+              {selectedItem?.fullName && selectedItem?.autodeskUserName && (
                 <p className="mt-1 text-sm font-semibold text-muted-foreground wrap-break-word">
-                  @{detailItem.autodeskUserName}
+                  @{selectedItem.autodeskUserName}
                 </p>
               )}
             </div>
 
-            {detailMode === "session" ? (
+            {mode === "sessions" ? (
               <>
                 <div className="rounded-xl border-2 border-violet-200/70 bg-violet-50/40 p-4 space-y-3">
                   <p className="text-xs font-semibold tracking-wide text-violet-700 uppercase">
@@ -876,7 +1001,7 @@ export default function AllUsers() {
                 ))}
               </>
             ) : (
-              detailFields.map((field) => (
+              displayFields.map((field) => (
                 <div key={field.label} className="rounded-lg border p-3">
                   <p className="text-xs text-muted-foreground">{field.label}</p>
                   <p className="mt-1 text-sm wrap-break-word">{field.value}</p>
@@ -887,217 +1012,58 @@ export default function AllUsers() {
         </SheetContent>
       </Sheet>
 
-      {loading ? (
-        <div className="grid grid-cols-1 gap-3 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 2xl:grid-cols-5">
-          {Array.from({ length: 15 }).map((_, index) => (
-            <Skeleton key={index} className="h-38 w-full" />
-          ))}
-        </div>
-      ) : items.length === 0 ? (
-        <Card>
-          <CardContent className="py-8 text-center text-sm text-muted-foreground">
-            No users found.
-          </CardContent>
-        </Card>
-      ) : (
+      <div className="min-h-0 flex-1 overflow-y-auto px-1 py-2">
         <div
           className={
-            hasActivityCard
-              ? "grid gap-4 xl:grid-cols-[minmax(0,1fr)_460px]"
-              : "block"
+            loading ? "space-y-3 opacity-70 transition-opacity" : "space-y-3"
           }
         >
-          <div
-            className={`grid grid-cols-1 gap-3 sm:grid-cols-2 lg:grid-cols-3 ${
-              hasActivityCard
-                ? "xl:grid-cols-3"
-                : "xl:grid-cols-4 2xl:grid-cols-5"
-            }`}
-          >
-            {items.map((item) => (
-              <UserSummaryCard
-                key={item.autodeskUserName}
-                item={item}
-                isSelected={
-                  selectedUser?.autodeskUserName === item.autodeskUserName
-                }
-                onClick={() => void loadUserActivity(item)}
-              />
-            ))}
-          </div>
-
-          {renderedUser && (
-            <Card
-              className={`h-fit border-border/90 bg-background/95 shadow-sm transition-all duration-200 ease-out ${
-                activityCardOpen
-                  ? "translate-x-0 scale-100 opacity-100"
-                  : "translate-x-2 scale-[0.99] opacity-0"
-              }`}
-            >
-              <CardHeader className="pb-3">
-                <div className="flex items-start justify-between gap-3">
-                  <div>
-                    <CardTitle className="text-base">
-                      {renderedUser.fullName?.trim() ||
-                        renderedUser.autodeskUserName}
-                    </CardTitle>
-                    <p className="text-xs text-muted-foreground">
-                      @{renderedUser.autodeskUserName}
-                    </p>
-                  </div>
-                  <Button
-                    variant="ghost"
-                    size="icon"
-                    className="size-8"
-                    onClick={closeUserActivity}
-                    aria-label="Close user activity"
-                  >
-                    <X className="size-4" />
-                  </Button>
-                </div>
-              </CardHeader>
-              <CardContent className="space-y-5">
-                {activityLoading ? (
-                  <div className="space-y-3">
-                    <Skeleton className="h-26 w-full" />
-                    <Skeleton className="h-26 w-full" />
-                  </div>
-                ) : (
-                  <>
-                    <div>
-                      <p className="mb-2 text-xs font-semibold uppercase tracking-wide text-muted-foreground">
-                        Projects Accessed ({uniqueProjects.length})
-                      </p>
-                      {uniqueProjects.length === 0 ? (
-                        <p className="text-sm text-muted-foreground">
-                          No projects found.
-                        </p>
-                      ) : (
-                        <div className="max-h-36 overflow-auto rounded-md border">
-                          {uniqueProjects.map((project) => (
-                            <div
-                              key={project}
-                              className="border-b px-3 py-1.5 last:border-b-0 text-sm truncate"
-                            >
-                              {project}
-                            </div>
-                          ))}
-                        </div>
-                      )}
-                    </div>
-
-                    <div>
-                      <p className="mb-2 text-xs font-semibold uppercase tracking-wide text-muted-foreground">
-                        Sessions ({userSessions.length})
-                      </p>
-                      {userSessions.length === 0 ? (
-                        <p className="text-sm text-muted-foreground">
-                          No sessions found.
-                        </p>
-                      ) : (
-                        <div className="max-h-64 overflow-auto rounded-md border">
-                          <table className="w-full text-left text-sm">
-                            <thead className="bg-muted/40 text-xs text-muted-foreground">
-                              <tr>
-                                <th className="px-3 py-2">Date</th>
-                                <th className="px-3 py-2">Time</th>
-                                <th className="px-3 py-2">File Name</th>
-                              </tr>
-                            </thead>
-                            <tbody>
-                              {userSessions.map((session) => (
-                                <tr
-                                  key={session._id}
-                                  className="cursor-pointer border-t hover:bg-muted/30"
-                                  onClick={() => {
-                                    setDetailMode("session");
-                                    setDetailItem(session);
-                                    setDetailOpen(true);
-                                  }}
-                                >
-                                  <td className="px-3 py-2 whitespace-nowrap">
-                                    {session.dateTime
-                                      ? format(
-                                          new Date(session.dateTime),
-                                          "MM/dd/yy",
-                                        )
-                                      : "-"}
-                                  </td>
-                                  <td className="px-3 py-2 whitespace-nowrap">
-                                    {session.dateTime
-                                      ? format(
-                                          new Date(session.dateTime),
-                                          "h:mm a",
-                                        )
-                                      : "-"}
-                                  </td>
-                                  <td className="px-3 py-2 truncate max-w-44">
-                                    {session.fileName || session.modelId || "-"}
-                                  </td>
-                                </tr>
-                              ))}
-                            </tbody>
-                          </table>
-                        </div>
-                      )}
-                    </div>
-
-                    <div>
-                      <p className="mb-2 text-xs font-semibold uppercase tracking-wide text-muted-foreground">
-                        Syncs ({userSyncs.length})
-                      </p>
-                      {userSyncs.length === 0 ? (
-                        <p className="text-sm text-muted-foreground">
-                          No syncs found.
-                        </p>
-                      ) : (
-                        <div className="max-h-64 overflow-auto rounded-md border">
-                          <table className="w-full text-left text-sm">
-                            <thead className="bg-muted/40 text-xs text-muted-foreground">
-                              <tr>
-                                <th className="px-3 py-2">Date</th>
-                                <th className="px-3 py-2">Time</th>
-                                <th className="px-3 py-2">File Name</th>
-                              </tr>
-                            </thead>
-                            <tbody>
-                              {userSyncs.map((sync) => (
-                                <tr
-                                  key={sync._id}
-                                  className="cursor-pointer border-t hover:bg-muted/30"
-                                  onClick={() => {
-                                    setDetailMode("sync");
-                                    setDetailItem(sync);
-                                    setDetailOpen(true);
-                                  }}
-                                >
-                                  <td className="px-3 py-2 whitespace-nowrap">
-                                    {sync.date
-                                      ? format(new Date(sync.date), "MM/dd/yy")
-                                      : "-"}
-                                  </td>
-                                  <td className="px-3 py-2 whitespace-nowrap">
-                                    {sync.date
-                                      ? format(new Date(sync.date), "h:mm a")
-                                      : "-"}
-                                  </td>
-                                  <td className="px-3 py-2 truncate max-w-44">
-                                    {sync.fileName || sync.modelId || "-"}
-                                  </td>
-                                </tr>
-                              ))}
-                            </tbody>
-                          </table>
-                        </div>
-                      )}
-                    </div>
-                  </>
-                )}
+          {loading && data.items.length === 0 ? (
+            Array.from({ length: 5 }).map((_, index) => (
+              <Skeleton key={index} className="h-24 w-full" />
+            ))
+          ) : data.items.length === 0 ? (
+            <Card>
+              <CardContent className="py-8 text-center text-sm text-muted-foreground">
+                No records found for this date range.
               </CardContent>
             </Card>
+          ) : mode === "sessions" ? (
+            data.items.map((item) => (
+              <SessionCard
+                key={(item as SessionListItem)._id}
+                item={item as SessionListItem}
+                onClick={() => {
+                  setSelectedItem(item as SessionListItem);
+                  setDetailsOpen(true);
+                }}
+                syncsExpanded={
+                  expandedSyncsBySessionId[(item as SessionListItem)._id] ??
+                  false
+                }
+                onToggleSyncs={() =>
+                  setExpandedSyncsBySessionId((current) => ({
+                    ...current,
+                    [(item as SessionListItem)._id]:
+                      !current[(item as SessionListItem)._id],
+                  }))
+                }
+              />
+            ))
+          ) : (
+            data.items.map((item) => (
+              <SyncCard
+                key={(item as SyncListItem)._id}
+                item={item as SyncListItem}
+                onClick={() => {
+                  setSelectedItem(item as SyncListItem);
+                  setDetailsOpen(true);
+                }}
+              />
+            ))
           )}
         </div>
-      )}
+      </div>
     </div>
   );
 }
