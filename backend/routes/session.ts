@@ -1,11 +1,11 @@
 import express from "express";
 import {
-  getAllSessions,
-  getAllSessionsCount,
+  getSessionsController,
+  getSessionsCountController,
 } from "../controllers/sessionsController.js";
 const sessionRouter = express.Router();
 
-sessionRouter.get("/", getAllSessions);
-sessionRouter.get("/count", getAllSessionsCount);
+sessionRouter.get("/", getSessionsController);
+sessionRouter.get("/count", getSessionsCountController);
 
 export default sessionRouter;

@@ -1,8 +1,8 @@
 import express from "express";
-import { getAllSyncsCountController } from "../controllers/syncController.js";
+import { getSyncsCountController } from "../controllers/syncController.js";
 
 const syncRouter = express.Router();
 
-syncRouter.get("/count", getAllSyncsCountController);
+syncRouter.get("/count", getSyncsCountController);
 
 export default syncRouter;
