@@ -1,13 +1,17 @@
 import express from "express";
-import userRouter from "./routes/users.js";
+import activeRouter from "./routes/active.js";
 import "dotenv/config";
 import { connectDB } from "./db.js";
+import sessionRouter from "./routes/session.js";
+import syncRouter from "./routes/sync.js";
 
 const app = express();
 const PORT = process.env.PORT || 3000;
 
 app.use(express.json());
-app.use("/api/users", userRouter);
+app.use("/api/active", activeRouter);
+app.use("/api/sessions", sessionRouter);
+app.use("/api/syncs", syncRouter);
 
 const startServer = async () => {
   try {
