@@ -4,8 +4,10 @@
     <meta charset="utf-8" />
     <title>Redirect</title>
     <script type="text/javascript">
-      // Redirect all 404s to /Vision/index.html which lets React Router handle the routing
-      window.location.replace("/Vision/index.html");
+      // Redirect 404s to root with the original path preserved in sessionStorage
+      // so React Router can handle the route correctly
+      sessionStorage.setItem("redirectTo", window.location.pathname);
+      window.location.replace("/Vision/");
     </script>
   </head>
 </html>
