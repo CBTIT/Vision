@@ -11,10 +11,9 @@ import Login from "./components/login";
 import { useAuth } from "./contexts/AuthContext";
 import { Skeleton } from "./components/ui/skeleton";
 
-function App() {
-  const { isLoading, isAuthenticated } = useAuth();
+function ProtectedLayout() {
+  const { isAuthenticated, isLoading } = useAuth();
 
-  // If still loading auth check, show skeleton
   if (isLoading) {
     return (
       <div className="flex items-center justify-center min-h-screen">
@@ -23,15 +22,28 @@ function App() {
     );
   }
 
-  // If not authenticated, navigate to login immediately
   if (!isAuthenticated) {
     return <Navigate to="/login" replace />;
+  }
+
+  return <Layout />;
+}
+
+function App() {
+  const { isLoading } = useAuth();
+
+  if (isLoading) {
+    return (
+      <div className="flex items-center justify-center min-h-screen">
+        <Skeleton className="h-64 w-64" />
+      </div>
+    );
   }
 
   return (
     <Routes>
       <Route path="/login" element={<Login />} />
-      <Route path="/" element={<Layout />}>
+      <Route path="/" element={<ProtectedLayout />}>
         <Route index element={<Overview />} />
         <Route path="users" element={<AllUsers />} />
         <Route path="active-users" element={<ActiveUsers />} />
