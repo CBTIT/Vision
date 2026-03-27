@@ -19,8 +19,7 @@ const PORT = process.env.PORT || 3000;
 const allowedOrigins = (
   process.env.FRONTEND_URLS?.split(",")
     .map((origin) => origin.trim())
-    .filter(Boolean) ??
-  []
+    .filter(Boolean) ?? []
 ).concat(process.env.FRONTEND_URL ? [process.env.FRONTEND_URL.trim()] : []);
 
 if (allowedOrigins.length === 0) {
