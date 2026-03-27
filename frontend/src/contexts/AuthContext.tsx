@@ -21,11 +21,15 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({
     // Check if user is already logged in
     const checkAuth = async () => {
       try {
+        console.log("🔍 Checking auth status...");
         const userData = await getMe();
+        console.log("✅ User authenticated:", userData);
         setUser(userData);
-      } catch {
+      } catch (error) {
+        console.log("❌ Not authenticated:", error);
         setUser(null);
       } finally {
+        console.log("✨ Auth check complete, hiding loader");
         setIsLoading(false);
       }
     };
