@@ -192,7 +192,7 @@ export default function CloudData() {
                       onClick={() => setSelectedProjectKey(projectKey(project))}
                       className={`w-full rounded-lg border px-3 py-2 text-left transition-colors ${
                         selected
-                          ? "border-blue-400/70 bg-blue-50"
+                          ? "border-blue-400/70 bg-blue-50 dark:border-blue-600/70 dark:bg-blue-950/40"
                           : "border-border hover:bg-muted/35"
                       }`}
                     >
@@ -276,7 +276,7 @@ export default function CloudData() {
             ) : (
               <div className="space-y-3">
                 {details.warnings.length > 0 && (
-                  <div className="rounded-lg border border-amber-300 bg-amber-50 px-3 py-2 text-xs text-amber-800">
+                  <div className="rounded-lg border border-amber-300 bg-amber-50 px-3 py-2 text-xs text-amber-800 dark:border-amber-700 dark:bg-amber-950/50 dark:text-amber-400">
                     {details.warnings.join(" ")}
                   </div>
                 )}

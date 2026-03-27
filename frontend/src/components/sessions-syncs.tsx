@@ -216,7 +216,7 @@ function SyncTimeline({
     <div className={compact ? "space-y-2" : "space-y-3"}>
       {timeline.map((sync, index) => (
         <div key={sync.syncId} className="relative pl-7">
-          <span className="absolute left-2 top-2 h-2.5 w-2.5 rounded-full bg-violet-400 ring-2 ring-violet-100" />
+          <span className="absolute left-2 top-2 h-2.5 w-2.5 rounded-full bg-violet-400 ring-2 ring-violet-100 dark:ring-violet-900" />
           {index < timeline.length - 1 && (
             <span className="absolute left-3.25 top-5 h-[calc(100%-0.2rem)] w-px bg-border" />
           )}
@@ -280,7 +280,7 @@ function SessionCard({
     <Card
       className={`w-full cursor-pointer transition-colors ${
         crash
-          ? "border-rose-300 bg-rose-50/60 hover:bg-rose-100/60"
+          ? "border-rose-300 bg-rose-50/60 hover:bg-rose-100/60 dark:border-rose-800 dark:bg-rose-950/40 dark:hover:bg-rose-950/60"
           : "hover:bg-muted/30"
       }`}
       onClick={onClick}
@@ -785,7 +785,7 @@ export default function SessionsSyncsPage({ mode }: { mode: Mode }) {
           side="right"
           className={`sm:max-w-xl w-[92vw] overflow-y-auto ${
             mode === "sessions" && selectedSessionIsCrash
-              ? "border-rose-200 bg-rose-50"
+              ? "border-rose-200 bg-rose-50 dark:border-rose-900 dark:bg-rose-950/60"
               : ""
           }`}
         >
@@ -796,7 +796,7 @@ export default function SessionsSyncsPage({ mode }: { mode: Mode }) {
                   {mode === "sessions" ? "Session Details" : "Sync Details"}
                 </span>
                 {mode === "sessions" && selectedSessionIsCrash && (
-                  <span className="inline-flex items-center rounded-full border border-rose-300 bg-rose-100 px-2 py-0.5 text-[11px] font-semibold uppercase tracking-wide text-rose-700">
+                  <span className="inline-flex items-center rounded-full border border-rose-300 bg-rose-100 px-2 py-0.5 text-[11px] font-semibold uppercase tracking-wide text-rose-700 dark:border-rose-700 dark:bg-rose-950/60 dark:text-rose-400">
                     Crash
                   </span>
                 )}
@@ -828,8 +828,8 @@ export default function SessionsSyncsPage({ mode }: { mode: Mode }) {
 
             {mode === "sessions" ? (
               <>
-                <div className="rounded-xl border-2 border-violet-200/70 bg-violet-50/40 p-4 space-y-3">
-                  <p className="text-xs font-semibold tracking-wide text-violet-700 uppercase">
+                <div className="rounded-xl border-2 border-violet-200/70 bg-violet-50/40 p-4 space-y-3 dark:border-violet-800/60 dark:bg-violet-950/30">
+                  <p className="text-xs font-semibold tracking-wide text-violet-700 uppercase dark:text-violet-400">
                     Project Details
                   </p>
                   <div>

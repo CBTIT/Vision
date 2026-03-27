@@ -185,7 +185,7 @@ function SyncTimeline({ timeline }: { timeline: SyncTimelineItem[] }) {
     <div className="space-y-3">
       {timeline.map((sync, index) => (
         <div key={sync.syncId} className="relative pl-7">
-          <span className="absolute left-2 top-2 h-2.5 w-2.5 rounded-full bg-violet-400 ring-2 ring-violet-100" />
+          <span className="absolute left-2 top-2 h-2.5 w-2.5 rounded-full bg-violet-400 ring-2 ring-violet-100 dark:ring-violet-900" />
           {index < timeline.length - 1 && (
             <span className="absolute left-3.25 top-5 h-[calc(100%-0.2rem)] w-px bg-border" />
           )}
@@ -586,7 +586,7 @@ export default function ActiveUsers() {
                         @{item.user}
                       </p>
                     </div>
-                    <span className="inline-flex rounded-full border border-emerald-300 bg-emerald-50 px-2 py-0.5 text-[11px] font-semibold text-emerald-700">
+                    <span className="inline-flex rounded-full border border-emerald-300 bg-emerald-50 px-2 py-0.5 text-[11px] font-semibold text-emerald-700 dark:border-emerald-700 dark:bg-emerald-950/60 dark:text-emerald-400">
                       Live
                     </span>
                   </div>
@@ -628,7 +628,7 @@ export default function ActiveUsers() {
                               key={`${item._id}-${doc.sessionId}-${doc.modelName}`}
                               className={`rounded-md border px-3 py-2 ${
                                 isActive
-                                  ? "border-emerald-300 bg-emerald-50"
+                                  ? "border-emerald-300 bg-emerald-50 dark:border-emerald-700 dark:bg-emerald-950/40"
                                   : "bg-muted/20"
                               }`}
                             >
@@ -641,15 +641,15 @@ export default function ActiveUsers() {
                               </p>
 
                               {isActive && (
-                                <div className="mt-2 rounded-md border border-blue-200 bg-blue-50/70 px-2.5 py-2">
-                                  <p className="text-[11px] uppercase tracking-wide text-blue-700">
+                                <div className="mt-2 rounded-md border border-blue-200 bg-blue-50/70 px-2.5 py-2 dark:border-blue-800 dark:bg-blue-950/50">
+                                  <p className="text-[11px] uppercase tracking-wide text-blue-700 dark:text-blue-400">
                                     Active View
                                   </p>
-                                  <p className="mt-1 flex items-center gap-1.5 text-sm font-semibold text-blue-900 wrap-break-word">
+                                  <p className="mt-1 flex items-center gap-1.5 text-sm font-semibold text-blue-900 wrap-break-word dark:text-blue-200">
                                     <Eye className="size-3.5" />
                                     {item.activeViewName || "-"}
                                   </p>
-                                  <p className="text-[11px] text-blue-700/85 wrap-break-word">
+                                  <p className="text-[11px] text-blue-700/85 wrap-break-word dark:text-blue-400/80">
                                     {item.activeProjectName || "-"}
                                   </p>
                                 </div>
@@ -696,7 +696,9 @@ export default function ActiveUsers() {
         <SheetContent
           side="right"
           className={`sm:max-w-xl w-[92vw] overflow-y-auto ${
-            selectedSessionIsCrash ? "border-rose-200 bg-rose-50" : ""
+            selectedSessionIsCrash
+              ? "border-rose-200 bg-rose-50 dark:border-rose-900 dark:bg-rose-950/60"
+              : ""
           }`}
         >
           <SheetHeader>
@@ -704,7 +706,7 @@ export default function ActiveUsers() {
               <span className="inline-flex items-center gap-2">
                 <span>Session Details</span>
                 {selectedSessionIsCrash && (
-                  <span className="inline-flex items-center rounded-full border border-rose-300 bg-rose-100 px-2 py-0.5 text-[11px] font-semibold uppercase tracking-wide text-rose-700">
+                  <span className="inline-flex items-center rounded-full border border-rose-300 bg-rose-100 px-2 py-0.5 text-[11px] font-semibold uppercase tracking-wide text-rose-700 dark:border-rose-700 dark:bg-rose-950/60 dark:text-rose-400">
                     Crash
                   </span>
                 )}
@@ -734,8 +736,8 @@ export default function ActiveUsers() {
                     )}
                 </div>
 
-                <div className="rounded-xl border-2 border-violet-200/70 bg-violet-50/40 p-4 space-y-3">
-                  <p className="text-xs font-semibold tracking-wide text-violet-700 uppercase">
+                <div className="rounded-xl border-2 border-violet-200/70 bg-violet-50/40 p-4 space-y-3 dark:border-violet-800/60 dark:bg-violet-950/30">
+                  <p className="text-xs font-semibold tracking-wide text-violet-700 uppercase dark:text-violet-400">
                     Project Details
                   </p>
                   <div>

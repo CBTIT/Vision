@@ -18,6 +18,7 @@ import { DateRangeFilter } from "./date-range-filter";
 import { useDateRange } from "./date-range-context";
 import { useAutoRefresh } from "@/hooks/use-auto-refresh";
 import { RefreshButton } from "@/components/refresh-button";
+import { useTheme } from "@/hooks/use-theme";
 import {
   fetchSessionsCount,
   fetchSyncsCount,
@@ -214,10 +215,10 @@ function ChartTooltip({ active, payload }: ChartTooltipProps) {
   return (
     <div className="rounded-md border border-border bg-background px-3 py-2 text-xs shadow-sm">
       <p className="mb-1 font-semibold text-foreground">{row.dateLabel}</p>
-      <p className="text-blue-500">
+      <p className="text-blue-500 dark:text-blue-400">
         Sessions: {row.sessionsCount.toLocaleString()}
       </p>
-      <p className="text-violet-500">
+      <p className="text-violet-500 dark:text-violet-400">
         Syncs: {row.syncsCount.toLocaleString()}
       </p>
     </div>
@@ -240,8 +241,9 @@ function DailyTrendChart({
     dateLabel: format(new Date(point.date), "dd MMM yyyy"),
   }));
   const xTicks = getAdaptiveTicks(chartData);
-  const axisStroke = "#6b7280";
-  const gridStroke = "#d1d5db";
+  const { isDark } = useTheme();
+  const axisStroke = isDark ? "#4b5563" : "#6b7280";
+  const gridStroke = isDark ? "#374151" : "#d1d5db";
   const sessionsGradientId = "sessions-gradient";
   const syncsGradientId = "syncs-gradient";
 

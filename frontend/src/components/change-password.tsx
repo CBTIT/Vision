@@ -55,7 +55,7 @@ const PasswordInput: React.FC<PasswordInputProps> = ({
     </div>
     {showCriteria && value.length > 0 && (
       <div
-        className={`text-xs mt-1 ${isPasswordValid ? "text-green-600" : "text-red-600"}`}
+        className={`text-xs mt-1 ${isPasswordValid ? "text-green-600 dark:text-green-400" : "text-red-600 dark:text-red-400"}`}
       >
         {isPasswordValid
           ? "✓ Password meets requirements"
@@ -160,10 +160,14 @@ export default function ChangePassword({
             isLoading={isLoading}
           />
           {confirmPassword.length > 0 && !passwordsMatch && (
-            <div className="text-xs text-red-600">✗ Passwords do not match</div>
+            <div className="text-xs text-red-600 dark:text-red-400">
+              ✗ Passwords do not match
+            </div>
           )}
           {confirmPassword.length > 0 && passwordsMatch && (
-            <div className="text-xs text-green-600">✓ Passwords match</div>
+            <div className="text-xs text-green-600 dark:text-green-400">
+              ✓ Passwords match
+            </div>
           )}
 
           <div className="flex gap-3 pt-4">

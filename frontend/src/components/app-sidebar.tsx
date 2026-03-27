@@ -13,6 +13,8 @@ import { NavUser } from "./nav-user";
 import { Separator } from "./ui/separator";
 import { Link, useLocation } from "react-router-dom";
 import { useAuth } from "../contexts/AuthContext";
+import { useTheme } from "../hooks/use-theme";
+import { Moon, Sun } from "lucide-react";
 
 const data = {
   navMain: [
@@ -54,6 +56,7 @@ const data = {
 export function AppSidebar() {
   const { pathname } = useLocation();
   const { user } = useAuth();
+  const { isDark, toggleTheme } = useTheme();
 
   // Generate initials from name or email
   const getInitials = (name: string | undefined, email: string) => {
@@ -124,6 +127,22 @@ export function AppSidebar() {
         <SidebarGroup />
       </SidebarContent>
       <SidebarFooter>
+        <SidebarMenu>
+          <SidebarMenuItem>
+            <SidebarMenuButton
+              className="px-5"
+              onClick={toggleTheme}
+              tooltip={isDark ? "Switch to light mode" : "Switch to dark mode"}
+            >
+              {isDark ? (
+                <Sun className="h-4 w-4" />
+              ) : (
+                <Moon className="h-4 w-4" />
+              )}
+              <span>{isDark ? "Light Mode" : "Dark Mode"}</span>
+            </SidebarMenuButton>
+          </SidebarMenuItem>
+        </SidebarMenu>
         <NavUser user={userData} />
       </SidebarFooter>
     </Sidebar>
