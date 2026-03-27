@@ -1,4 +1,5 @@
 import React, { useState } from "react";
+import { createPortal } from "react-dom";
 import { changePassword } from "../lib/api";
 import { Button } from "./ui/button";
 import { Input } from "./ui/input";
@@ -9,6 +10,60 @@ interface ChangePasswordProps {
   onSuccess: () => void;
   onCancel: () => void;
 }
+
+interface PasswordInputProps {
+  label: string;
+  value: string;
+  onChange: (e: React.ChangeEvent<HTMLInputElement>) => void;
+  show: boolean;
+  onToggle: () => void;
+  showCriteria?: boolean;
+  isPasswordValid?: boolean;
+  isLoading?: boolean;
+}
+
+const PasswordInput: React.FC<PasswordInputProps> = ({
+  label,
+  value,
+  onChange,
+  show,
+  onToggle,
+  showCriteria,
+  isPasswordValid,
+  isLoading,
+}) => (
+  <div className="space-y-2">
+    <label className="text-sm font-medium text-foreground">{label}</label>
+    <div className="relative">
+      <Input
+        type={show ? "text" : "password"}
+        value={value}
+        onChange={onChange}
+        placeholder="Enter password"
+        disabled={isLoading}
+        className="h-9 pr-10"
+      />
+      <button
+        type="button"
+        onClick={onToggle}
+        disabled={isLoading}
+        className="absolute right-3 top-2.5 text-muted-foreground hover:text-foreground disabled:opacity-50 transition-colors"
+        aria-label="Toggle password visibility"
+      >
+        {show ? <EyeOff className="h-4 w-4" /> : <Eye className="h-4 w-4" />}
+      </button>
+    </div>
+    {showCriteria && value.length > 0 && (
+      <div
+        className={`text-xs mt-1 ${isPasswordValid ? "text-green-600" : "text-red-600"}`}
+      >
+        {isPasswordValid
+          ? "✓ Password meets requirements"
+          : "✗ Minimum 8 characters required"}
+      </div>
+    )}
+  </div>
+);
 
 export default function ChangePassword({
   onSuccess,
@@ -23,22 +78,30 @@ export default function ChangePassword({
   const [error, setError] = useState("");
   const [isLoading, setIsLoading] = useState(false);
 
+  const isPasswordValid = newPassword.length >= 8;
+  const passwordsMatch =
+    newPassword === confirmPassword && newPassword.length > 0;
+
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     setError("");
-    setIsLoading(true);
 
-    if (newPassword !== confirmPassword) {
-      setError("New passwords do not match");
-      setIsLoading(false);
+    if (!currentPassword) {
+      setError("Current password is required");
       return;
     }
 
-    if (newPassword.length < 8) {
+    if (!isPasswordValid) {
       setError("Password must be at least 8 characters");
-      setIsLoading(false);
       return;
     }
+
+    if (!passwordsMatch) {
+      setError("New passwords do not match");
+      return;
+    }
+
+    setIsLoading(true);
 
     try {
       await changePassword(currentPassword, newPassword, confirmPassword);
@@ -54,47 +117,9 @@ export default function ChangePassword({
     }
   };
 
-  const PasswordInput = ({
-    label,
-    value,
-    onChange,
-    show,
-    onToggle,
-  }: {
-    label: string;
-    value: string;
-    onChange: (e: React.ChangeEvent<HTMLInputElement>) => void;
-    show: boolean;
-    onToggle: () => void;
-  }) => (
-    <div className="space-y-2">
-      <label className="text-sm font-medium text-foreground">{label}</label>
-      <div className="relative">
-        <Input
-          type={show ? "text" : "password"}
-          value={value}
-          onChange={onChange}
-          placeholder="Enter password"
-          disabled={isLoading}
-          required
-          className="h-9 pr-10"
-        />
-        <button
-          type="button"
-          onClick={onToggle}
-          disabled={isLoading}
-          className="absolute right-3 top-2.5 text-muted-foreground hover:text-foreground disabled:opacity-50 transition-colors"
-          aria-label="Toggle password visibility"
-        >
-          {show ? <EyeOff className="h-4 w-4" /> : <Eye className="h-4 w-4" />}
-        </button>
-      </div>
-    </div>
-  );
-
-  return (
-    <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50 p-4">
-      <Card className="w-full max-w-md p-6 border">
+  return createPortal(
+    <div className="fixed inset-0 bg-black/70 flex items-center justify-center z-50 p-4">
+      <Card className="w-full max-w-md p-6 border shadow-lg">
         <h2 className="text-2xl font-bold mb-6 text-foreground">
           Change Password
         </h2>
@@ -112,6 +137,7 @@ export default function ChangePassword({
             onChange={(e) => setCurrentPassword(e.target.value)}
             show={showCurrentPassword}
             onToggle={() => setShowCurrentPassword(!showCurrentPassword)}
+            isLoading={isLoading}
           />
 
           <PasswordInput
@@ -120,6 +146,9 @@ export default function ChangePassword({
             onChange={(e) => setNewPassword(e.target.value)}
             show={showNewPassword}
             onToggle={() => setShowNewPassword(!showNewPassword)}
+            showCriteria={true}
+            isPasswordValid={isPasswordValid}
+            isLoading={isLoading}
           />
 
           <PasswordInput
@@ -128,10 +157,26 @@ export default function ChangePassword({
             onChange={(e) => setConfirmPassword(e.target.value)}
             show={showConfirmPassword}
             onToggle={() => setShowConfirmPassword(!showConfirmPassword)}
+            isLoading={isLoading}
           />
+          {confirmPassword.length > 0 && !passwordsMatch && (
+            <div className="text-xs text-red-600">✗ Passwords do not match</div>
+          )}
+          {confirmPassword.length > 0 && passwordsMatch && (
+            <div className="text-xs text-green-600">✓ Passwords match</div>
+          )}
 
           <div className="flex gap-3 pt-4">
-            <Button type="submit" disabled={isLoading} className="flex-1 h-9">
+            <Button
+              type="submit"
+              disabled={
+                isLoading ||
+                !isPasswordValid ||
+                !passwordsMatch ||
+                !currentPassword
+              }
+              className="flex-1 h-9"
+            >
               {isLoading ? "Updating..." : "Update Password"}
             </Button>
             <Button
@@ -146,6 +191,7 @@ export default function ChangePassword({
           </div>
         </form>
       </Card>
-    </div>
+    </div>,
+    document.body,
   );
 }
