@@ -16,9 +16,26 @@ import authRouter from "./routes/auth.js";
 const app = express();
 const PORT = process.env.PORT || 3000;
 
+const allowedOrigins = (
+  process.env.FRONTEND_URLS?.split(",")
+    .map((origin) => origin.trim())
+    .filter(Boolean) ??
+  []
+).concat(process.env.FRONTEND_URL ? [process.env.FRONTEND_URL.trim()] : []);
+
+if (allowedOrigins.length === 0) {
+  allowedOrigins.push("http://localhost:5173");
+}
+
 app.use(
   cors({
-    origin: "http://localhost:5173", // your frontend URL
+    origin: (origin, callback) => {
+      // Allow non-browser requests (no Origin header) and configured frontend origins.
+      if (!origin || allowedOrigins.includes(origin)) {
+        return callback(null, true);
+      }
+      return callback(new Error(`CORS blocked for origin: ${origin}`));
+    },
     credentials: true,
   }),
 );

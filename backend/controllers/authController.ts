@@ -16,11 +16,12 @@ export const loginController = async (req: AuthRequest, res: Response) => {
     }
 
     const { token, user } = await loginService(email, password);
+    const isProduction = process.env.NODE_ENV === "production";
 
     res.cookie("authToken", token, {
       httpOnly: true,
-      secure: process.env.NODE_ENV === "production",
-      sameSite: "strict",
+      secure: isProduction,
+      sameSite: isProduction ? "none" : "strict",
       maxAge: 14 * 24 * 60 * 60 * 1000, // 14 days
     });
 
@@ -33,7 +34,12 @@ export const loginController = async (req: AuthRequest, res: Response) => {
 };
 
 export const logoutController = (req: AuthRequest, res: Response) => {
-  res.clearCookie("authToken");
+  const isProduction = process.env.NODE_ENV === "production";
+  res.clearCookie("authToken", {
+    httpOnly: true,
+    secure: isProduction,
+    sameSite: isProduction ? "none" : "strict",
+  });
   return res.json({ success: true, message: "Logged out successfully" });
 };
 
