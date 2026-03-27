@@ -1,10 +1,12 @@
-import { useEffect, useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useState } from "react";
 import { format } from "date-fns";
 import { ChevronLeft, ChevronRight } from "lucide-react";
 
 import { useHeaderRight } from "./header-context";
 import { DateRangeFilter } from "./date-range-filter";
 import { useDateRange } from "./date-range-context";
+import { useAutoRefresh } from "@/hooks/use-auto-refresh";
+import { RefreshButton } from "@/components/refresh-button";
 import {
   fetchSessionsList,
   fetchSyncsList,
@@ -407,6 +409,7 @@ export default function SessionsSyncsPage({ mode }: { mode: Mode }) {
   const title = mode === "sessions" ? "Sessions" : "Syncs";
   const setHeaderRight = useHeaderRight();
   const { from, to } = useDateRange();
+  const { refreshKey, refresh } = useAutoRefresh();
 
   const [loading, setLoading] = useState(true);
   const [page, setPage] = useState(1);
@@ -432,10 +435,20 @@ export default function SessionsSyncsPage({ mode }: { mode: Mode }) {
   const fromStr = format(from, "yyyy-MM-dd");
   const toStr = format(to, "yyyy-MM-dd");
 
+  const handleRefresh = useCallback(() => {
+    setPage(1);
+    refresh();
+  }, [refresh]);
+
   useEffect(() => {
-    setHeaderRight(<DateRangeFilter />);
+    setHeaderRight(
+      <div className="flex items-center gap-2">
+        <DateRangeFilter />
+        <RefreshButton onRefresh={handleRefresh} />
+      </div>,
+    );
     return () => setHeaderRight(null);
-  }, [setHeaderRight]);
+  }, [setHeaderRight, handleRefresh]);
 
   useEffect(() => {
     setPage(1);
@@ -684,7 +697,7 @@ export default function SessionsSyncsPage({ mode }: { mode: Mode }) {
         setData({ items: [], total: 0, page: 1, limit, totalPages: 1 }),
       )
       .finally(() => setLoading(false));
-  }, [mode, fromStr, toStr, page, limit]);
+  }, [mode, fromStr, toStr, page, limit, refreshKey]);
 
   const subtitle = useMemo(() => {
     const fromLabel = format(from, "dd MMM yyyy");

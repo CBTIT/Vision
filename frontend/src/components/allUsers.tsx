@@ -3,6 +3,8 @@ import { format } from "date-fns";
 import { X } from "lucide-react";
 
 import { useHeaderRight } from "./header-context";
+import { useAutoRefresh } from "@/hooks/use-auto-refresh";
+import { RefreshButton } from "@/components/refresh-button";
 import {
   fetchUsersSummary,
   fetchSessionsList,
@@ -229,6 +231,19 @@ function UserSummaryCard({
   const lastActiveLabel = item.lastActiveAt
     ? format(new Date(item.lastActiveAt), "dd MMM yyyy, hh:mm a")
     : "-";
+  const pluginBadges =
+    item.pluginVersionDetails && item.pluginVersionDetails.length > 0
+      ? item.pluginVersionDetails.map((detail) => ({
+          key: `${detail.pluginVersion}-${detail.revitVersions.join("|")}`,
+          label:
+            detail.revitVersions.length > 0
+              ? `v${detail.pluginVersion} • Revit ${detail.revitVersions.join(", ")}`
+              : `v${detail.pluginVersion}`,
+        }))
+      : item.pluginVersions.map((pluginVersion) => ({
+          key: pluginVersion,
+          label: `v${pluginVersion}`,
+        }));
 
   return (
     <Card
@@ -244,14 +259,14 @@ function UserSummaryCard({
         <p className="truncate text-xs text-muted-foreground">
           @{item.autodeskUserName}
         </p>
-        {item.pluginVersions.length > 0 && (
+        {pluginBadges.length > 0 && (
           <div className="mt-2 flex flex-wrap gap-1.5">
-            {item.pluginVersions.map((version) => (
+            {pluginBadges.map((badge) => (
               <span
-                key={version}
+                key={badge.key}
                 className="inline-flex rounded-full border border-amber-300 bg-amber-50 px-2 py-0.5 text-[11px] font-medium text-amber-800"
               >
-                v{version}
+                {badge.label}
               </span>
             ))}
           </div>
@@ -287,8 +302,11 @@ function UserSummaryCard({
 
 export default function AllUsers() {
   const setHeaderRight = useHeaderRight();
+  const { refreshKey, refresh } = useAutoRefresh();
   const [loading, setLoading] = useState(true);
   const [items, setItems] = useState<UserSummaryItem[]>([]);
+  const [selectedPluginVersion, setSelectedPluginVersion] = useState("all");
+  const [selectedRevitVersion, setSelectedRevitVersion] = useState("all");
 
   const [selectedUser, setSelectedUser] = useState<UserSummaryItem | null>(
     null,
@@ -309,9 +327,9 @@ export default function AllUsers() {
   const [showMoreDetails, setShowMoreDetails] = useState(false);
 
   useEffect(() => {
-    setHeaderRight(null);
+    setHeaderRight(<RefreshButton onRefresh={refresh} />);
     return () => setHeaderRight(null);
-  }, [setHeaderRight]);
+  }, [setHeaderRight, refresh]);
 
   useEffect(() => {
     setLoading(true);
@@ -319,7 +337,7 @@ export default function AllUsers() {
       .then((result) => setItems(result.items))
       .catch(() => setItems([]))
       .finally(() => setLoading(false));
-  }, []);
+  }, [refreshKey]);
 
   async function loadUserActivity(user: UserSummaryItem) {
     const isNewSelection =
@@ -366,10 +384,105 @@ export default function AllUsers() {
     }, 180);
   }
 
+  const availablePluginVersions = useMemo(() => {
+    const seen = new Set<string>();
+    const versions: string[] = [];
+
+    for (const item of items) {
+      const pluginVersions =
+        item.pluginVersionDetails && item.pluginVersionDetails.length > 0
+          ? item.pluginVersionDetails.map((detail) => detail.pluginVersion)
+          : item.pluginVersions;
+
+      for (const version of pluginVersions) {
+        const normalizedVersion = version.trim();
+        if (!normalizedVersion || seen.has(normalizedVersion)) continue;
+        seen.add(normalizedVersion);
+        versions.push(normalizedVersion);
+      }
+    }
+
+    return versions.sort((left, right) =>
+      left.localeCompare(right, undefined, { numeric: true }),
+    );
+  }, [items]);
+
+  const availableRevitVersions = useMemo(() => {
+    const seen = new Set<string>();
+    const versions: string[] = [];
+
+    for (const item of items) {
+      for (const detail of item.pluginVersionDetails ?? []) {
+        for (const version of detail.revitVersions) {
+          const normalizedVersion = version.trim();
+          if (!normalizedVersion || seen.has(normalizedVersion)) continue;
+          seen.add(normalizedVersion);
+          versions.push(normalizedVersion);
+        }
+      }
+    }
+
+    return versions.sort((left, right) =>
+      left.localeCompare(right, undefined, { numeric: true }),
+    );
+  }, [items]);
+
+  const filteredItems = useMemo(() => {
+    return items.filter((item) => {
+      const matchesPluginVersion =
+        selectedPluginVersion === "all" ||
+        (item.pluginVersionDetails && item.pluginVersionDetails.length > 0
+          ? item.pluginVersionDetails.some(
+              (detail) => detail.pluginVersion === selectedPluginVersion,
+            )
+          : item.pluginVersions.includes(selectedPluginVersion));
+
+      if (!matchesPluginVersion) return false;
+
+      const matchesRevitVersion =
+        selectedRevitVersion === "all" ||
+        (item.pluginVersionDetails ?? []).some((detail) =>
+          detail.revitVersions.includes(selectedRevitVersion),
+        );
+
+      return matchesRevitVersion;
+    });
+  }, [items, selectedPluginVersion, selectedRevitVersion]);
+
   const subtitle = useMemo(
-    () => `${items.length} unique Autodesk users`,
-    [items],
+    () => `${filteredItems.length} of ${items.length} unique Autodesk users`,
+    [filteredItems.length, items.length],
   );
+
+  useEffect(() => {
+    if (
+      selectedPluginVersion !== "all" &&
+      !availablePluginVersions.includes(selectedPluginVersion)
+    ) {
+      setSelectedPluginVersion("all");
+    }
+  }, [availablePluginVersions, selectedPluginVersion]);
+
+  useEffect(() => {
+    if (
+      selectedRevitVersion !== "all" &&
+      !availableRevitVersions.includes(selectedRevitVersion)
+    ) {
+      setSelectedRevitVersion("all");
+    }
+  }, [availableRevitVersions, selectedRevitVersion]);
+
+  useEffect(() => {
+    if (!selectedUser) return;
+
+    const isSelectedUserVisible = filteredItems.some(
+      (item) => item.autodeskUserName === selectedUser.autodeskUserName,
+    );
+
+    if (!isSelectedUserVisible) {
+      closeUserActivity();
+    }
+  }, [filteredItems, selectedUser]);
 
   const uniqueProjects = useMemo(() => {
     const seen = new Set<string>();
@@ -634,11 +747,85 @@ export default function AllUsers() {
   const hasActivityCard = renderedUser !== null;
 
   return (
-    <div className="space-y-4">
+    <div className="flex h-full min-h-0 flex-col gap-4 overflow-hidden px-1 py-1">
       <Card className="shrink-0 border-border/90 bg-background/95 shadow-sm">
-        <CardHeader className="pb-3">
-          <CardTitle>All Users</CardTitle>
-          <p className="text-xs text-muted-foreground">{subtitle}</p>
+        <CardHeader className="flex flex-col gap-3 py-4 xl:flex-row xl:items-start xl:justify-between">
+          <div className="min-w-0">
+            <CardTitle>All Users</CardTitle>
+            <p className="text-xs text-muted-foreground">{subtitle}</p>
+          </div>
+
+          <div className="flex min-w-0 flex-1 justify-end xl:pl-4">
+            <div className="flex min-w-0 flex-col items-end gap-2">
+              <div className="flex min-w-0 flex-wrap items-center justify-end gap-2">
+                <p className="shrink-0 text-[11px] font-semibold uppercase tracking-wide text-muted-foreground">
+                  CBT
+                </p>
+                <div className="flex min-w-0 flex-wrap justify-end gap-1.5">
+                  <Button
+                    type="button"
+                    size="xs"
+                    variant={
+                      selectedPluginVersion === "all" ? "default" : "outline"
+                    }
+                    onClick={() => setSelectedPluginVersion("all")}
+                  >
+                    All
+                  </Button>
+                  {availablePluginVersions.map((version) => (
+                    <Button
+                      key={version}
+                      type="button"
+                      size="xs"
+                      variant={
+                        selectedPluginVersion === version
+                          ? "default"
+                          : "outline"
+                      }
+                      onClick={() => setSelectedPluginVersion(version)}
+                    >
+                      v{version}
+                    </Button>
+                  ))}
+                </div>
+              </div>
+
+              {availableRevitVersions.length > 0 && (
+                <div className="flex min-w-0 flex-wrap items-center justify-end gap-2">
+                  <p className="shrink-0 text-[11px] font-semibold uppercase tracking-wide text-muted-foreground">
+                    Revit
+                  </p>
+                  <div className="flex min-w-0 flex-wrap justify-end gap-1.5">
+                    <Button
+                      type="button"
+                      size="xs"
+                      variant={
+                        selectedRevitVersion === "all" ? "default" : "outline"
+                      }
+                      onClick={() => setSelectedRevitVersion("all")}
+                    >
+                      All
+                    </Button>
+                    {availableRevitVersions.map((version) => (
+                      <Button
+                        key={version}
+                        type="button"
+                        size="xs"
+                        variant={
+                          selectedRevitVersion === version
+                            ? "default"
+                            : "outline"
+                        }
+                        onClick={() => setSelectedRevitVersion(version)}
+                      >
+                        {version}
+                      </Button>
+                    ))}
+                  </div>
+                </div>
+              )}
+            </div>
+          </div>
         </CardHeader>
       </Card>
 
@@ -887,217 +1074,237 @@ export default function AllUsers() {
         </SheetContent>
       </Sheet>
 
-      {loading ? (
-        <div className="grid grid-cols-1 gap-3 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 2xl:grid-cols-5">
-          {Array.from({ length: 15 }).map((_, index) => (
-            <Skeleton key={index} className="h-38 w-full" />
-          ))}
-        </div>
-      ) : items.length === 0 ? (
-        <Card>
-          <CardContent className="py-8 text-center text-sm text-muted-foreground">
-            No users found.
-          </CardContent>
-        </Card>
-      ) : (
-        <div
-          className={
-            hasActivityCard
-              ? "grid gap-4 xl:grid-cols-[minmax(0,1fr)_460px]"
-              : "block"
-          }
-        >
-          <div
-            className={`grid grid-cols-1 gap-3 sm:grid-cols-2 lg:grid-cols-3 ${
-              hasActivityCard
-                ? "xl:grid-cols-3"
-                : "xl:grid-cols-4 2xl:grid-cols-5"
-            }`}
-          >
-            {items.map((item) => (
-              <UserSummaryCard
-                key={item.autodeskUserName}
-                item={item}
-                isSelected={
-                  selectedUser?.autodeskUserName === item.autodeskUserName
-                }
-                onClick={() => void loadUserActivity(item)}
-              />
-            ))}
+      <div className="min-h-0 flex-1 overflow-hidden">
+        {loading ? (
+          <div className="h-full overflow-y-auto px-1 pb-1">
+            <div className="grid grid-cols-1 gap-3 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 2xl:grid-cols-5">
+              {Array.from({ length: 15 }).map((_, index) => (
+                <Skeleton key={index} className="h-38 w-full" />
+              ))}
+            </div>
           </div>
-
-          {renderedUser && (
-            <Card
-              className={`h-fit border-border/90 bg-background/95 shadow-sm transition-all duration-200 ease-out ${
-                activityCardOpen
-                  ? "translate-x-0 scale-100 opacity-100"
-                  : "translate-x-2 scale-[0.99] opacity-0"
-              }`}
-            >
-              <CardHeader className="pb-3">
-                <div className="flex items-start justify-between gap-3">
-                  <div>
-                    <CardTitle className="text-base">
-                      {renderedUser.fullName?.trim() ||
-                        renderedUser.autodeskUserName}
-                    </CardTitle>
-                    <p className="text-xs text-muted-foreground">
-                      @{renderedUser.autodeskUserName}
-                    </p>
-                  </div>
-                  <Button
-                    variant="ghost"
-                    size="icon"
-                    className="size-8"
-                    onClick={closeUserActivity}
-                    aria-label="Close user activity"
-                  >
-                    <X className="size-4" />
-                  </Button>
-                </div>
-              </CardHeader>
-              <CardContent className="space-y-5">
-                {activityLoading ? (
-                  <div className="space-y-3">
-                    <Skeleton className="h-26 w-full" />
-                    <Skeleton className="h-26 w-full" />
-                  </div>
-                ) : (
-                  <>
-                    <div>
-                      <p className="mb-2 text-xs font-semibold uppercase tracking-wide text-muted-foreground">
-                        Projects Accessed ({uniqueProjects.length})
-                      </p>
-                      {uniqueProjects.length === 0 ? (
-                        <p className="text-sm text-muted-foreground">
-                          No projects found.
-                        </p>
-                      ) : (
-                        <div className="max-h-36 overflow-auto rounded-md border">
-                          {uniqueProjects.map((project) => (
-                            <div
-                              key={project}
-                              className="border-b px-3 py-1.5 last:border-b-0 text-sm truncate"
-                            >
-                              {project}
-                            </div>
-                          ))}
-                        </div>
-                      )}
-                    </div>
-
-                    <div>
-                      <p className="mb-2 text-xs font-semibold uppercase tracking-wide text-muted-foreground">
-                        Sessions ({userSessions.length})
-                      </p>
-                      {userSessions.length === 0 ? (
-                        <p className="text-sm text-muted-foreground">
-                          No sessions found.
-                        </p>
-                      ) : (
-                        <div className="max-h-64 overflow-auto rounded-md border">
-                          <table className="w-full text-left text-sm">
-                            <thead className="bg-muted/40 text-xs text-muted-foreground">
-                              <tr>
-                                <th className="px-3 py-2">Date</th>
-                                <th className="px-3 py-2">Time</th>
-                                <th className="px-3 py-2">File Name</th>
-                              </tr>
-                            </thead>
-                            <tbody>
-                              {userSessions.map((session) => (
-                                <tr
-                                  key={session._id}
-                                  className="cursor-pointer border-t hover:bg-muted/30"
-                                  onClick={() => {
-                                    setDetailMode("session");
-                                    setDetailItem(session);
-                                    setDetailOpen(true);
-                                  }}
-                                >
-                                  <td className="px-3 py-2 whitespace-nowrap">
-                                    {session.dateTime
-                                      ? format(
-                                          new Date(session.dateTime),
-                                          "MM/dd/yy",
-                                        )
-                                      : "-"}
-                                  </td>
-                                  <td className="px-3 py-2 whitespace-nowrap">
-                                    {session.dateTime
-                                      ? format(
-                                          new Date(session.dateTime),
-                                          "h:mm a",
-                                        )
-                                      : "-"}
-                                  </td>
-                                  <td className="px-3 py-2 truncate max-w-44">
-                                    {session.fileName || session.modelId || "-"}
-                                  </td>
-                                </tr>
-                              ))}
-                            </tbody>
-                          </table>
-                        </div>
-                      )}
-                    </div>
-
-                    <div>
-                      <p className="mb-2 text-xs font-semibold uppercase tracking-wide text-muted-foreground">
-                        Syncs ({userSyncs.length})
-                      </p>
-                      {userSyncs.length === 0 ? (
-                        <p className="text-sm text-muted-foreground">
-                          No syncs found.
-                        </p>
-                      ) : (
-                        <div className="max-h-64 overflow-auto rounded-md border">
-                          <table className="w-full text-left text-sm">
-                            <thead className="bg-muted/40 text-xs text-muted-foreground">
-                              <tr>
-                                <th className="px-3 py-2">Date</th>
-                                <th className="px-3 py-2">Time</th>
-                                <th className="px-3 py-2">File Name</th>
-                              </tr>
-                            </thead>
-                            <tbody>
-                              {userSyncs.map((sync) => (
-                                <tr
-                                  key={sync._id}
-                                  className="cursor-pointer border-t hover:bg-muted/30"
-                                  onClick={() => {
-                                    setDetailMode("sync");
-                                    setDetailItem(sync);
-                                    setDetailOpen(true);
-                                  }}
-                                >
-                                  <td className="px-3 py-2 whitespace-nowrap">
-                                    {sync.date
-                                      ? format(new Date(sync.date), "MM/dd/yy")
-                                      : "-"}
-                                  </td>
-                                  <td className="px-3 py-2 whitespace-nowrap">
-                                    {sync.date
-                                      ? format(new Date(sync.date), "h:mm a")
-                                      : "-"}
-                                  </td>
-                                  <td className="px-3 py-2 truncate max-w-44">
-                                    {sync.fileName || sync.modelId || "-"}
-                                  </td>
-                                </tr>
-                              ))}
-                            </tbody>
-                          </table>
-                        </div>
-                      )}
-                    </div>
-                  </>
-                )}
+        ) : filteredItems.length === 0 ? (
+          <div className="h-full overflow-y-auto px-1 pb-1">
+            <Card>
+              <CardContent className="py-8 text-center text-sm text-muted-foreground">
+                {items.length === 0
+                  ? "No users found."
+                  : "No users match the selected version filters."}
               </CardContent>
             </Card>
-          )}
-        </div>
-      )}
+          </div>
+        ) : (
+          <div
+            className={`grid h-full min-h-0 gap-4 ${
+              hasActivityCard
+                ? "xl:grid-cols-[minmax(0,1fr)_460px]"
+                : "grid-cols-1"
+            }`}
+          >
+            <div className="min-h-0 overflow-y-auto px-1 pt-2 pb-1">
+              <div
+                className={`grid grid-cols-1 gap-3 sm:grid-cols-2 lg:grid-cols-3 ${
+                  hasActivityCard
+                    ? "xl:grid-cols-3"
+                    : "xl:grid-cols-4 2xl:grid-cols-5"
+                }`}
+              >
+                {filteredItems.map((item) => (
+                  <UserSummaryCard
+                    key={item.autodeskUserName}
+                    item={item}
+                    isSelected={
+                      selectedUser?.autodeskUserName === item.autodeskUserName
+                    }
+                    onClick={() => void loadUserActivity(item)}
+                  />
+                ))}
+              </div>
+            </div>
+
+            {renderedUser && (
+              <div className="min-h-0 pt-2 pb-1 xl:pr-1">
+                <Card
+                  className={`flex h-full min-h-0 flex-col border-border/90 bg-background/95 shadow-sm transition-all duration-200 ease-out ${
+                    activityCardOpen
+                      ? "translate-x-0 scale-100 opacity-100"
+                      : "translate-x-2 scale-[0.99] opacity-0"
+                  }`}
+                >
+                  <CardHeader className="pb-3">
+                    <div className="flex items-start justify-between gap-3">
+                      <div>
+                        <CardTitle className="text-base">
+                          {renderedUser.fullName?.trim() ||
+                            renderedUser.autodeskUserName}
+                        </CardTitle>
+                        <p className="text-xs text-muted-foreground">
+                          @{renderedUser.autodeskUserName}
+                        </p>
+                      </div>
+                      <Button
+                        variant="ghost"
+                        size="icon"
+                        className="size-8"
+                        onClick={closeUserActivity}
+                        aria-label="Close user activity"
+                      >
+                        <X className="size-4" />
+                      </Button>
+                    </div>
+                  </CardHeader>
+                  <CardContent className="min-h-0 flex-1 overflow-y-auto space-y-5">
+                    {activityLoading ? (
+                      <div className="space-y-3">
+                        <Skeleton className="h-26 w-full" />
+                        <Skeleton className="h-26 w-full" />
+                      </div>
+                    ) : (
+                      <>
+                        <div>
+                          <p className="mb-2 text-xs font-semibold uppercase tracking-wide text-muted-foreground">
+                            Projects Accessed ({uniqueProjects.length})
+                          </p>
+                          {uniqueProjects.length === 0 ? (
+                            <p className="text-sm text-muted-foreground">
+                              No projects found.
+                            </p>
+                          ) : (
+                            <div className="max-h-36 overflow-auto rounded-md border">
+                              {uniqueProjects.map((project) => (
+                                <div
+                                  key={project}
+                                  className="border-b px-3 py-1.5 last:border-b-0 text-sm truncate"
+                                >
+                                  {project}
+                                </div>
+                              ))}
+                            </div>
+                          )}
+                        </div>
+
+                        <div>
+                          <p className="mb-2 text-xs font-semibold uppercase tracking-wide text-muted-foreground">
+                            Sessions ({userSessions.length})
+                          </p>
+                          {userSessions.length === 0 ? (
+                            <p className="text-sm text-muted-foreground">
+                              No sessions found.
+                            </p>
+                          ) : (
+                            <div className="max-h-64 overflow-auto rounded-md border">
+                              <table className="w-full text-left text-sm">
+                                <thead className="bg-muted/40 text-xs text-muted-foreground">
+                                  <tr>
+                                    <th className="px-3 py-2">Date</th>
+                                    <th className="px-3 py-2">Time</th>
+                                    <th className="px-3 py-2">File Name</th>
+                                  </tr>
+                                </thead>
+                                <tbody>
+                                  {userSessions.map((session) => (
+                                    <tr
+                                      key={session._id}
+                                      className="cursor-pointer border-t hover:bg-muted/30"
+                                      onClick={() => {
+                                        setDetailMode("session");
+                                        setDetailItem(session);
+                                        setDetailOpen(true);
+                                      }}
+                                    >
+                                      <td className="px-3 py-2 whitespace-nowrap">
+                                        {session.dateTime
+                                          ? format(
+                                              new Date(session.dateTime),
+                                              "MM/dd/yy",
+                                            )
+                                          : "-"}
+                                      </td>
+                                      <td className="px-3 py-2 whitespace-nowrap">
+                                        {session.dateTime
+                                          ? format(
+                                              new Date(session.dateTime),
+                                              "h:mm a",
+                                            )
+                                          : "-"}
+                                      </td>
+                                      <td className="px-3 py-2 truncate max-w-44">
+                                        {session.fileName ||
+                                          session.modelId ||
+                                          "-"}
+                                      </td>
+                                    </tr>
+                                  ))}
+                                </tbody>
+                              </table>
+                            </div>
+                          )}
+                        </div>
+
+                        <div>
+                          <p className="mb-2 text-xs font-semibold uppercase tracking-wide text-muted-foreground">
+                            Syncs ({userSyncs.length})
+                          </p>
+                          {userSyncs.length === 0 ? (
+                            <p className="text-sm text-muted-foreground">
+                              No syncs found.
+                            </p>
+                          ) : (
+                            <div className="max-h-64 overflow-auto rounded-md border">
+                              <table className="w-full text-left text-sm">
+                                <thead className="bg-muted/40 text-xs text-muted-foreground">
+                                  <tr>
+                                    <th className="px-3 py-2">Date</th>
+                                    <th className="px-3 py-2">Time</th>
+                                    <th className="px-3 py-2">File Name</th>
+                                  </tr>
+                                </thead>
+                                <tbody>
+                                  {userSyncs.map((sync) => (
+                                    <tr
+                                      key={sync._id}
+                                      className="cursor-pointer border-t hover:bg-muted/30"
+                                      onClick={() => {
+                                        setDetailMode("sync");
+                                        setDetailItem(sync);
+                                        setDetailOpen(true);
+                                      }}
+                                    >
+                                      <td className="px-3 py-2 whitespace-nowrap">
+                                        {sync.date
+                                          ? format(
+                                              new Date(sync.date),
+                                              "MM/dd/yy",
+                                            )
+                                          : "-"}
+                                      </td>
+                                      <td className="px-3 py-2 whitespace-nowrap">
+                                        {sync.date
+                                          ? format(
+                                              new Date(sync.date),
+                                              "h:mm a",
+                                            )
+                                          : "-"}
+                                      </td>
+                                      <td className="px-3 py-2 truncate max-w-44">
+                                        {sync.fileName || sync.modelId || "-"}
+                                      </td>
+                                    </tr>
+                                  ))}
+                                </tbody>
+                              </table>
+                            </div>
+                          )}
+                        </div>
+                      </>
+                    )}
+                  </CardContent>
+                </Card>
+              </div>
+            )}
+          </div>
+        )}
+      </div>
     </div>
   );
 }

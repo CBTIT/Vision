@@ -63,7 +63,29 @@ export type UserSummaryItem = {
   syncsCount: number;
   pluginUseCount: number;
   pluginVersions: string[];
+  pluginVersionDetails?: Array<{
+    pluginVersion: string;
+    revitVersions: string[];
+  }>;
   lastActiveAt?: string;
+};
+
+export type ActiveUserItem = {
+  _id: string;
+  user: string;
+  fullName?: string;
+  machine: string;
+  revitVersion: string;
+  openDocs: Array<{
+    sessionId: string;
+    modelName: string;
+  }>;
+  activeDocId?: string | null;
+  activeDocName?: string | null;
+  activeViewId?: string | null;
+  activeViewName?: string | null;
+  activeProjectName?: string | null;
+  ts: string;
 };
 
 async function apiFetch<T>(
@@ -74,9 +96,90 @@ async function apiFetch<T>(
   if (params) {
     Object.entries(params).forEach(([k, v]) => url.searchParams.set(k, v));
   }
-  const res = await fetch(url.toString());
+  const res = await fetch(url.toString(), {
+    credentials: "include",
+  });
   if (!res.ok) throw new Error(`API error ${res.status}: ${path}`);
   return res.json() as Promise<T>;
+}
+
+async function apiPost<T>(
+  path: string,
+  body: Record<string, unknown>,
+): Promise<T> {
+  const res = await fetch(`${BASE_URL}${path}`, {
+    method: "POST",
+    headers: {
+      "Content-Type": "application/json",
+    },
+    body: JSON.stringify(body),
+    credentials: "include",
+  });
+  if (!res.ok) {
+    const error = (await res.json()) as { error?: string };
+    throw new Error(error.error || `API error ${res.status}: ${path}`);
+  }
+  return res.json() as Promise<T>;
+}
+
+// Auth Types
+export type User = {
+  userId: string;
+  email: string;
+  fullName?: string;
+  profileIcon?: string;
+};
+
+// Auth Functions
+export async function login(
+  email: string,
+  password: string,
+): Promise<{ user: User }> {
+  return apiPost<{ user: User }>("/api/auth/login", { email, password });
+}
+
+export async function logout(): Promise<{ success: boolean }> {
+  return apiPost<{ success: boolean }>("/api/auth/logout", {});
+}
+
+export async function changePassword(
+  currentPassword: string,
+  newPassword: string,
+  confirmPassword: string,
+): Promise<{ success: boolean; message: string }> {
+  return apiPost<{ success: boolean; message: string }>(
+    "/api/auth/change-password",
+    { currentPassword, newPassword, confirmPassword },
+  );
+}
+
+export async function updateProfileIcon(
+  profileIcon: string,
+): Promise<{ user: User }> {
+  return apiPut<{ user: User }>("/api/auth/profile-icon", { profileIcon });
+}
+
+async function apiPut<T>(
+  path: string,
+  body: Record<string, unknown>,
+): Promise<T> {
+  const res = await fetch(`${BASE_URL}${path}`, {
+    method: "PUT",
+    headers: {
+      "Content-Type": "application/json",
+    },
+    body: JSON.stringify(body),
+    credentials: "include",
+  });
+  if (!res.ok) {
+    const error = (await res.json()) as { error?: string };
+    throw new Error(error.error || `API error ${res.status}: ${path}`);
+  }
+  return res.json() as Promise<T>;
+}
+
+export async function getMe(): Promise<User> {
+  return apiFetch<User>("/api/auth/me");
 }
 
 export async function fetchSessionsCount(
@@ -106,6 +209,13 @@ export async function fetchActiveUsersCount(): Promise<number> {
     "/api/active/count",
   );
   return data.activeUsersCount;
+}
+
+export async function fetchActiveUsers(): Promise<ActiveUserItem[]> {
+  const data = await apiFetch<{ activeUsers: ActiveUserItem[] }>(
+    "/api/active/users",
+  );
+  return data.activeUsers;
 }
 
 export async function fetchPluginUseCount(): Promise<number> {
@@ -141,6 +251,8 @@ export async function fetchSessionsList(params: {
   page: number;
   limit: number;
   autodeskUserName?: string;
+  modelId?: string;
+  deviceName?: string;
 }): Promise<PaginatedListResponse<SessionListItem>> {
   const query: Record<string, string> = {
     page: String(params.page),
@@ -151,10 +263,20 @@ export async function fetchSessionsList(params: {
   if (params.autodeskUserName) {
     query.autodeskUserName = params.autodeskUserName;
   }
+  if (params.modelId) {
+    query.modelId = params.modelId;
+  }
+  if (params.deviceName) {
+    query.deviceName = params.deviceName;
+  }
   return apiFetch<PaginatedListResponse<SessionListItem>>(
     "/api/sessions",
     query,
   );
+}
+
+export async function fetchSessionById(id: string): Promise<SessionListItem> {
+  return apiFetch<SessionListItem>(`/api/sessions/${id}`);
 }
 
 export async function fetchSyncsList(params: {
@@ -203,6 +325,7 @@ export type ModelSummaryItem = {
   lastAccessedAt: string;
   lastAccessedBy: string;
   lastAccessedByFullName?: string;
+  usersCount: number;
   sessionCount: number;
 };
 
@@ -216,5 +339,69 @@ export async function fetchModelsList(params?: {
   return apiFetch<{ items: ModelSummaryItem[]; total: number }>(
     "/api/models",
     query,
+  );
+}
+
+export type CloudProjectListItem = {
+  id: string;
+  hubId: string;
+  hubName: string;
+  name: string;
+  status: string;
+  sourceType: "bim" | "acc_forma";
+  products: string[];
+};
+
+export type CloudProjectDetails = {
+  project: {
+    id: string;
+    hubId: string;
+    name: string;
+    status: string;
+    sourceType: "bim" | "acc_forma";
+    products: string[];
+  };
+  models: Array<{
+    id: string;
+    name: string;
+    fileType: string;
+    folderName: string;
+    lastModifiedAt: string;
+    lastModifiedBy: string;
+  }>;
+  users: Array<{
+    id: string;
+    name: string;
+    email: string;
+    role: string;
+    status: string;
+  }>;
+  companies: Array<{
+    id: string;
+    name: string;
+    trade: string;
+    status: string;
+  }>;
+  warnings: string[];
+};
+
+export async function fetchCloudProjects(): Promise<{
+  bim: CloudProjectListItem[];
+  accForma: CloudProjectListItem[];
+  total: number;
+}> {
+  return apiFetch<{
+    bim: CloudProjectListItem[];
+    accForma: CloudProjectListItem[];
+    total: number;
+  }>("/api/cloud/projects");
+}
+
+export async function fetchCloudProjectDetails(
+  hubId: string,
+  projectId: string,
+): Promise<CloudProjectDetails> {
+  return apiFetch<CloudProjectDetails>(
+    `/api/cloud/projects/${encodeURIComponent(hubId)}/${encodeURIComponent(projectId)}/details`,
   );
 }

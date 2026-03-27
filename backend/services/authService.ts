@@ -1,0 +1,112 @@
+import UserRegistered from "../models/UserRegistered.js";
+import bcrypt from "bcryptjs";
+import jwt from "jsonwebtoken";
+
+export interface AuthPayload {
+  userId: string;
+  email: string;
+}
+
+export const loginService = async (
+  email: string,
+  password: string,
+): Promise<{
+  token: string;
+  user: { email: string; userId: string; fullName?: string };
+}> => {
+  const user = await UserRegistered.findOne({ email: email.toLowerCase() });
+
+  if (!user) {
+    throw new Error("User not found");
+  }
+
+  const passwordMatch = await bcrypt.compare(password, user.password);
+  if (!passwordMatch) {
+    throw new Error("Invalid password");
+  }
+
+  const token = jwt.sign(
+    { userId: user._id.toString(), email: user.email },
+    process.env.JWT_SECRET!,
+    { expiresIn: "14d" },
+  );
+
+  return {
+    token,
+    user: {
+      email: user.email,
+      userId: user._id.toString(),
+      fullName: user.fullName || undefined,
+    },
+  };
+};
+
+export const changePasswordService = async (
+  userId: string,
+  currentPassword: string,
+  newPassword: string,
+): Promise<void> => {
+  const user = await UserRegistered.findById(userId);
+
+  if (!user) {
+    throw new Error("User not found");
+  }
+
+  const passwordMatch = await bcrypt.compare(currentPassword, user.password);
+  if (!passwordMatch) {
+    throw new Error("Current password is incorrect");
+  }
+
+  const hashedPassword = await bcrypt.hash(newPassword, 10);
+  user.password = hashedPassword;
+  user.lastPasswordChange = new Date();
+  await user.save();
+};
+
+export const getUserService = async (userId: string) => {
+  const user = await UserRegistered.findById(userId);
+  if (!user) {
+    throw new Error("User not found");
+  }
+  return {
+    email: user.email,
+    userId: user._id.toString(),
+    fullName: user.fullName || undefined,
+    profileIcon: user.profileIcon || "user",
+  };
+};
+
+export const updateProfileIconService = async (
+  userId: string,
+  profileIcon: string,
+): Promise<void> => {
+  const validIcons = [
+    "user",
+    "cat",
+    "dog",
+    "bird",
+    "fish",
+    "feather",
+    "bug",
+    "snail",
+    "turtle",
+    "rabbit",
+    "squirrel",
+    "wolf",
+    "paw",
+    "deer",
+    "fox",
+  ];
+
+  if (!validIcons.includes(profileIcon)) {
+    throw new Error("Invalid profile icon");
+  }
+
+  const user = await UserRegistered.findById(userId);
+  if (!user) {
+    throw new Error("User not found");
+  }
+
+  user.profileIcon = profileIcon;
+  await user.save();
+};

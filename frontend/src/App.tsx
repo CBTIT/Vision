@@ -1,4 +1,4 @@
-import { Route, Routes } from "react-router-dom";
+import { Route, Routes, Navigate } from "react-router-dom";
 import Layout from "./components/layout";
 import Overview from "./components/overview";
 import AllUsers from "./components/allUsers";
@@ -7,11 +7,43 @@ import Plugins from "./components/plugins";
 import AllModels from "./components/alModels";
 import ActiveUsers from "./components/activeUsers";
 import SessionsSyncsPage from "./components/sessions-syncs";
+import Login from "./components/login";
+import { useAuth } from "./contexts/AuthContext";
+import { Skeleton } from "./components/ui/skeleton";
+
+function ProtectedRoute({ element }: { element: React.ReactNode }) {
+  const { isAuthenticated, isLoading } = useAuth();
+
+  if (isLoading) {
+    return (
+      <div className="flex items-center justify-center min-h-screen">
+        <Skeleton className="h-64 w-64" />
+      </div>
+    );
+  }
+
+  if (!isAuthenticated) {
+    return <Navigate to="/login" replace />;
+  }
+
+  return element;
+}
 
 function App() {
+  const { isLoading } = useAuth();
+
+  if (isLoading) {
+    return (
+      <div className="flex items-center justify-center min-h-screen">
+        <Skeleton className="h-64 w-64" />
+      </div>
+    );
+  }
+
   return (
     <Routes>
-      <Route path="/" element={<Layout />}>
+      <Route path="/login" element={<Login />} />
+      <Route path="/" element={<ProtectedRoute element={<Layout />} />}>
         <Route index element={<Overview />} />
         <Route path="users" element={<AllUsers />} />
         <Route path="active-users" element={<ActiveUsers />} />

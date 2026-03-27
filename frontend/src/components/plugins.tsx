@@ -5,6 +5,8 @@ import { ChevronLeft, ChevronRight } from "lucide-react";
 import { useHeaderRight } from "./header-context";
 import { DateRangeFilter } from "./date-range-filter";
 import { useDateRange } from "./date-range-context";
+import { useAutoRefresh } from "@/hooks/use-auto-refresh";
+import { RefreshButton } from "@/components/refresh-button";
 import {
   fetchPluginUseList,
   type PaginatedListResponse,
@@ -97,6 +99,7 @@ function PluginCard({
 export default function Plugins() {
   const setHeaderRight = useHeaderRight();
   const { from, to } = useDateRange();
+  const { refreshKey, refresh } = useAutoRefresh();
   const [loading, setLoading] = useState(true);
   const [page, setPage] = useState(1);
   const [limit] = useState(10);
@@ -111,9 +114,14 @@ export default function Plugins() {
   });
 
   useEffect(() => {
-    setHeaderRight(<DateRangeFilter />);
+    setHeaderRight(
+      <div className="flex items-center gap-2">
+        <DateRangeFilter />
+        <RefreshButton onRefresh={refresh} />
+      </div>,
+    );
     return () => setHeaderRight(null);
-  }, [setHeaderRight]);
+  }, [setHeaderRight, refresh]);
 
   useEffect(() => {
     setLoading(true);
@@ -123,7 +131,7 @@ export default function Plugins() {
         setData({ items: [], total: 0, page: 1, limit, totalPages: 1 }),
       )
       .finally(() => setLoading(false));
-  }, [page, limit]);
+  }, [page, limit, refreshKey]);
 
   const pageTokens = useMemo(
     () => buildPageTokens(data.page, data.totalPages),

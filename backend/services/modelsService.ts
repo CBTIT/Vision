@@ -1,4 +1,5 @@
 import RevitSession from "../models/RevitSession.js";
+import UserMappings from "../models/UserMappings.js";
 
 export type ModelSummary = {
   modelId: string;
@@ -8,6 +9,7 @@ export type ModelSummary = {
   lastAccessedAt: string;
   lastAccessedBy: string;
   lastAccessedByFullName?: string;
+  usersCount: number;
   sessionCount: number;
 };
 
@@ -41,59 +43,88 @@ export const getModelsSummary = async (
     lastAccessedAt: Date;
     lastAccessedBy: string;
     sessionCount: number;
+    uniqueUsers: string[];
     // full name joined from last session (may not exist)
     lastAccessedByFullName?: string;
   };
 
-  const results = await RevitSession.aggregate<RawModel>([
-    { $match: matchStage },
-    {
-      $group: {
-        _id: {
-          $cond: [
-            {
-              $and: [
-                { $ifNull: ["$modelId", false] },
-                { $ne: ["$modelId", ""] },
-              ],
-            },
-            "$modelId",
-            "$fileName",
-          ],
-        },
-        fileName: { $last: "$fileName" },
-        projectName: {
-          $last: {
+  const [results, userMappings] = await Promise.all([
+    RevitSession.aggregate<RawModel>([
+      { $match: matchStage },
+      {
+        $group: {
+          _id: {
             $cond: [
               {
                 $and: [
-                  { $ifNull: ["$cloudProjectName", false] },
-                  { $ne: ["$cloudProjectName", ""] },
+                  { $ifNull: ["$modelId", false] },
+                  { $ne: ["$modelId", ""] },
                 ],
               },
-              "$cloudProjectName",
-              "$projectId",
+              "$modelId",
+              "$fileName",
             ],
           },
+          fileName: { $last: "$fileName" },
+          projectName: {
+            $last: {
+              $cond: [
+                {
+                  $and: [
+                    { $ifNull: ["$cloudProjectName", false] },
+                    { $ne: ["$cloudProjectName", ""] },
+                  ],
+                },
+                "$cloudProjectName",
+                "$projectId",
+              ],
+            },
+          },
+          lastFileSize: { $last: "$fileSize" },
+          lastAccessedAt: { $max: "$dateTime" },
+          lastAccessedBy: { $last: "$autodeskUserName" },
+          lastAccessedByFullName: { $last: "$fullName" },
+          uniqueUsers: { $addToSet: "$autodeskUserName" },
+          sessionCount: { $sum: 1 },
         },
-        lastFileSize: { $last: "$fileSize" },
-        lastAccessedAt: { $max: "$dateTime" },
-        lastAccessedBy: { $last: "$autodeskUserName" },
-        lastAccessedByFullName: { $last: "$fullName" },
-        sessionCount: { $sum: 1 },
       },
-    },
-    { $sort: { lastAccessedAt: -1 } },
+      { $sort: { lastAccessedAt: -1 } },
+    ]),
+    UserMappings.find({ autodeskUserName: { $exists: true, $ne: "" } })
+      .select({ autodeskUserName: 1, fullName: 1 })
+      .lean(),
   ]);
 
-  return results.map((r) => ({
-    modelId: r._id,
-    fileName: r.fileName || r._id,
-    projectName: r.projectName || "-",
-    lastFileSize: r.lastFileSize ?? null,
-    lastAccessedAt: r.lastAccessedAt ? r.lastAccessedAt.toISOString() : "",
-    lastAccessedBy: r.lastAccessedBy || "-",
-    lastAccessedByFullName: r.lastAccessedByFullName,
-    sessionCount: r.sessionCount,
-  }));
+  const fullNameMap = new Map<string, string>();
+  for (const row of userMappings) {
+    if (typeof row.fullName !== "string") continue;
+    const normalized = row.fullName.trim();
+    if (!normalized) continue;
+    fullNameMap.set(row.autodeskUserName, normalized);
+  }
+
+  return results.map((r) => {
+    const fallbackName =
+      typeof r.lastAccessedByFullName === "string"
+        ? r.lastAccessedByFullName.trim()
+        : "";
+    const mappedName = fullNameMap.get(r.lastAccessedBy || "") || "";
+
+    return {
+      modelId: r._id,
+      fileName: r.fileName || r._id,
+      projectName: r.projectName || "-",
+      lastFileSize: r.lastFileSize ?? null,
+      lastAccessedAt: r.lastAccessedAt ? r.lastAccessedAt.toISOString() : "",
+      lastAccessedBy: r.lastAccessedBy || "-",
+      lastAccessedByFullName: mappedName || fallbackName,
+      usersCount: Array.isArray(r.uniqueUsers)
+        ? r.uniqueUsers
+            .filter((name): name is string => typeof name === "string")
+            .map((name) => name.trim())
+            .filter((name) => name.length > 0).length
+        : 0,
+      sessionCount: r.sessionCount,
+    };
+  });
 };

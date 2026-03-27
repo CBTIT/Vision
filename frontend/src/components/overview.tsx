@@ -16,6 +16,8 @@ import {
 import { useHeaderRight } from "./header-context";
 import { DateRangeFilter } from "./date-range-filter";
 import { useDateRange } from "./date-range-context";
+import { useAutoRefresh } from "@/hooks/use-auto-refresh";
+import { RefreshButton } from "@/components/refresh-button";
 import {
   fetchSessionsCount,
   fetchSyncsCount,
@@ -437,6 +439,7 @@ const Overview = () => {
   const navigate = useNavigate();
   const setHeaderRight = useHeaderRight();
   const { from, to, setFrom, setTo, clearPreset } = useDateRange();
+  const { refreshKey, refresh } = useAutoRefresh();
 
   const [sessionCount, setSessionCount] = useState<number | null>(null);
   const [syncCount, setSyncCount] = useState<number | null>(null);
@@ -450,9 +453,14 @@ const Overview = () => {
   const [chartPoints, setChartPoints] = useState<OverviewDailyPoint[]>([]);
 
   useEffect(() => {
-    setHeaderRight(<DateRangeFilter />);
+    setHeaderRight(
+      <div className="flex items-center gap-2">
+        <DateRangeFilter />
+        <RefreshButton onRefresh={refresh} />
+      </div>,
+    );
     return () => setHeaderRight(null);
-  }, [setHeaderRight]);
+  }, [setHeaderRight, refresh]);
 
   useEffect(() => {
     const fromStr = format(from, "yyyy-MM-dd");
@@ -475,7 +483,7 @@ const Overview = () => {
       .then(setChartPoints)
       .catch(() => setChartPoints([]))
       .finally(() => setChartLoading(false));
-  }, [from, to]);
+  }, [from, to, refreshKey]);
 
   useEffect(() => {
     fetchActiveUsersCount()
@@ -487,7 +495,7 @@ const Overview = () => {
       .then(setPluginCount)
       .catch(() => setPluginCount(null))
       .finally(() => setPluginLoading(false));
-  }, []);
+  }, [refreshKey]);
 
   const fromLabel = format(from, "dd MMM yyyy");
   const toLabel = format(to, "dd MMM yyyy");
@@ -535,6 +543,7 @@ const Overview = () => {
           icon={<Users className="size-4 text-emerald-500" />}
           iconBg="bg-emerald-500/10"
           description="Right now"
+          onClick={() => navigate("/active-users")}
         />
         <StatCard
           title="Plugin Use"

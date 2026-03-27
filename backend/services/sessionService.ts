@@ -1,6 +1,7 @@
 import RevitSession from "../models/RevitSession.js";
 import RevitSyncEvent from "../models/RevitSyncEvents.js";
 import UserMappings from "../models/UserMappings.js";
+import mongoose from "mongoose";
 
 type SessionFilters = {
   limit?: number;
@@ -8,11 +9,67 @@ type SessionFilters = {
   from?: string;
   to?: string;
   autodeskUserName?: string;
+  modelId?: string;
+  deviceName?: string;
 };
+
+function escapeRegex(value: string): string {
+  return value.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+}
+
+function normalizeModelId(value: string): string {
+  return value.trim().replace(/^\{+|\}+$/g, "");
+}
+
+function usernameAlternatives(value: string): string[] {
+  const raw = value.trim();
+  if (!raw) return [];
+
+  const variants = new Set<string>([raw]);
+
+  const slashParts = raw.split(/\\|\//).filter(Boolean);
+  if (slashParts.length > 1) {
+    variants.add(slashParts[slashParts.length - 1]);
+  }
+
+  const atIndex = raw.indexOf("@");
+  if (atIndex > 0) {
+    variants.add(raw.slice(0, atIndex));
+  }
+
+  return Array.from(variants)
+    .map((entry) => entry.trim())
+    .filter(Boolean);
+}
+
 const buildSessionFilters = (filters: SessionFilters) => {
   const query: any = {};
   if (filters.autodeskUserName) {
-    query.autodeskUserName = filters.autodeskUserName;
+    const userAlternatives = usernameAlternatives(filters.autodeskUserName);
+    if (userAlternatives.length > 0) {
+      query.$or = userAlternatives.map((candidate) => ({
+        autodeskUserName: {
+          $regex: `^${escapeRegex(candidate)}$`,
+          $options: "i",
+        },
+      }));
+    }
+  }
+  if (filters.modelId) {
+    const normalizedModelId = normalizeModelId(filters.modelId);
+    if (normalizedModelId) {
+      const escaped = escapeRegex(normalizedModelId);
+      query.modelId = {
+        $regex: `^\\{?${escaped}\\}?$`,
+        $options: "i",
+      };
+    }
+  }
+  if (filters.deviceName) {
+    query.deviceName = {
+      $regex: `^${escapeRegex(filters.deviceName.trim())}$`,
+      $options: "i",
+    };
   }
   if (filters.from || filters.to) {
     query.dateTime = {};
@@ -123,5 +180,61 @@ export const getSessions = async (filters: SessionFilters) => {
     page,
     limit,
     totalPages: Math.max(1, Math.ceil(total / limit)),
+  };
+};
+
+export const getSessionById = async (sessionId: string) => {
+  if (!mongoose.isValidObjectId(sessionId)) {
+    return null;
+  }
+
+  const item = await RevitSession.findById(sessionId);
+  if (!item) return null;
+
+  const row = item.toObject();
+  const username =
+    typeof row.autodeskUserName === "string" ? row.autodeskUserName : "";
+
+  const mapping = username
+    ? await UserMappings.findOne({ autodeskUserName: username })
+        .select({ autodeskUserName: 1, fullName: 1 })
+        .lean()
+    : null;
+
+  const syncIds = Array.from(
+    new Set((row.syncDatabaseIds ?? []).map((id) => String(id))),
+  );
+
+  const syncDocs =
+    syncIds.length > 0
+      ? await RevitSyncEvent.find({ _id: { $in: syncIds } })
+          .select({ _id: 1, date: 1 })
+          .lean()
+      : [];
+
+  const orderedSyncs = syncDocs.sort(
+    (a, b) => new Date(a.date).getTime() - new Date(b.date).getTime(),
+  );
+
+  const syncTimeline = orderedSyncs.map((sync, index) => {
+    const currentTime = new Date(sync.date).getTime();
+    const previousTime =
+      index > 0 ? new Date(orderedSyncs[index - 1].date).getTime() : null;
+
+    return {
+      syncId: String(sync._id),
+      time: new Date(sync.date).toISOString(),
+      gapMinutesFromPrevious:
+        previousTime === null
+          ? null
+          : Math.round((currentTime - previousTime) / 60000),
+    };
+  });
+
+  return {
+    ...row,
+    fullName: mapping?.fullName ?? "",
+    syncCount: syncTimeline.length,
+    syncTimeline,
   };
 };

@@ -4,9 +4,22 @@ import { format } from "date-fns";
 import { useHeaderRight } from "./header-context";
 import { DateRangeFilter } from "./date-range-filter";
 import { useDateRange } from "./date-range-context";
+import { useAutoRefresh } from "@/hooks/use-auto-refresh";
+import { RefreshButton } from "@/components/refresh-button";
 import { fetchModelsList, type ModelSummaryItem } from "@/lib/api";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Skeleton } from "@/components/ui/skeleton";
+
+type SortKey =
+  | "fileName"
+  | "projectName"
+  | "lastAccessedAt"
+  | "lastFileSize"
+  | "lastAccessedBy"
+  | "usersCount"
+  | "sessionCount";
+
+type SortDirection = "asc" | "desc";
 
 function formatFileSizeMb(value: number | null): string {
   if (value === null || value === undefined) return "-";
@@ -17,17 +30,25 @@ function formatFileSizeMb(value: number | null): string {
 export default function AllModels() {
   const setHeaderRight = useHeaderRight();
   const { from, to } = useDateRange();
+  const { refreshKey, refresh } = useAutoRefresh();
 
   const [loading, setLoading] = useState(true);
   const [items, setItems] = useState<ModelSummaryItem[]>([]);
+  const [sortKey, setSortKey] = useState<SortKey>("lastFileSize");
+  const [sortDirection, setSortDirection] = useState<SortDirection>("desc");
 
   const fromStr = format(from, "yyyy-MM-dd");
   const toStr = format(to, "yyyy-MM-dd");
 
   useEffect(() => {
-    setHeaderRight(<DateRangeFilter />);
+    setHeaderRight(
+      <div className="flex items-center gap-2">
+        <DateRangeFilter />
+        <RefreshButton onRefresh={refresh} />
+      </div>,
+    );
     return () => setHeaderRight(null);
-  }, [setHeaderRight]);
+  }, [setHeaderRight, refresh]);
 
   useEffect(() => {
     setLoading(true);
@@ -35,13 +56,94 @@ export default function AllModels() {
       .then((result) => setItems(result.items))
       .catch(() => setItems([]))
       .finally(() => setLoading(false));
-  }, [fromStr, toStr]);
+  }, [fromStr, toStr, refreshKey]);
 
   const subtitle = useMemo(() => {
     const fromLabel = format(from, "dd MMM yyyy");
     const toLabel = format(to, "dd MMM yyyy");
     return fromLabel === toLabel ? fromLabel : `${fromLabel} – ${toLabel}`;
   }, [from, to]);
+
+  function getComparableValue(item: ModelSummaryItem, key: SortKey) {
+    switch (key) {
+      case "fileName":
+        return (item.fileName || "").toLowerCase();
+      case "projectName":
+        return (item.projectName || "").toLowerCase();
+      case "lastAccessedAt": {
+        const timestamp = item.lastAccessedAt
+          ? new Date(item.lastAccessedAt).getTime()
+          : 0;
+        return Number.isFinite(timestamp) ? timestamp : 0;
+      }
+      case "lastFileSize":
+        return Number.isFinite(item.lastFileSize ?? NaN)
+          ? (item.lastFileSize ?? 0)
+          : 0;
+      case "lastAccessedBy":
+        return (
+          item.lastAccessedByFullName?.trim() ||
+          item.lastAccessedBy ||
+          ""
+        ).toLowerCase();
+      case "usersCount":
+        return Number.isFinite(item.usersCount) ? item.usersCount : 0;
+      case "sessionCount":
+        return Number.isFinite(item.sessionCount) ? item.sessionCount : 0;
+      default:
+        return "";
+    }
+  }
+
+  function handleSort(nextKey: SortKey) {
+    if (sortKey === nextKey) {
+      setSortDirection((current) => (current === "asc" ? "desc" : "asc"));
+      return;
+    }
+    setSortKey(nextKey);
+    setSortDirection("asc");
+  }
+
+  function getSortIndicator(columnKey: SortKey): string {
+    if (sortKey !== columnKey) return "";
+    return sortDirection === "asc" ? " ▲" : " ▼";
+  }
+
+  const sortedItems = useMemo(() => {
+    const copied = [...items];
+    copied.sort((left, right) => {
+      const leftValue = getComparableValue(left, sortKey);
+      const rightValue = getComparableValue(right, sortKey);
+
+      let baseComparison = 0;
+      if (typeof leftValue === "number" && typeof rightValue === "number") {
+        baseComparison = leftValue - rightValue;
+      } else {
+        baseComparison = String(leftValue).localeCompare(
+          String(rightValue),
+          undefined,
+          {
+            numeric: true,
+            sensitivity: "base",
+          },
+        );
+      }
+
+      if (baseComparison === 0) {
+        return (left.fileName || "").localeCompare(
+          right.fileName || "",
+          undefined,
+          {
+            numeric: true,
+            sensitivity: "base",
+          },
+        );
+      }
+
+      return sortDirection === "asc" ? baseComparison : -baseComparison;
+    });
+    return copied;
+  }, [items, sortDirection, sortKey]);
 
   return (
     <div className="space-y-4">
@@ -73,39 +175,87 @@ export default function AllModels() {
               <thead className="border-b bg-muted/40">
                 <tr>
                   <th className="px-4 py-3 text-xs font-semibold uppercase tracking-wide text-muted-foreground">
-                    File Name
+                    <button
+                      type="button"
+                      className="w-full text-left hover:text-foreground"
+                      onClick={() => handleSort("fileName")}
+                    >
+                      File Name{getSortIndicator("fileName")}
+                    </button>
                   </th>
                   <th className="px-4 py-3 text-xs font-semibold uppercase tracking-wide text-muted-foreground">
-                    Project
+                    <button
+                      type="button"
+                      className="w-full text-left hover:text-foreground"
+                      onClick={() => handleSort("projectName")}
+                    >
+                      Project{getSortIndicator("projectName")}
+                    </button>
                   </th>
                   <th className="px-4 py-3 text-xs font-semibold uppercase tracking-wide text-muted-foreground whitespace-nowrap">
-                    Last Accessed
+                    <button
+                      type="button"
+                      className="w-full text-left hover:text-foreground"
+                      onClick={() => handleSort("lastAccessedAt")}
+                    >
+                      Last Accessed{getSortIndicator("lastAccessedAt")}
+                    </button>
                   </th>
                   <th className="px-4 py-3 text-xs font-semibold uppercase tracking-wide text-muted-foreground">
-                    Time
+                    <button
+                      type="button"
+                      className="w-full text-left hover:text-foreground"
+                      onClick={() => handleSort("lastAccessedAt")}
+                    >
+                      Time{getSortIndicator("lastAccessedAt")}
+                    </button>
                   </th>
                   <th className="px-4 py-3 text-xs font-semibold uppercase tracking-wide text-muted-foreground whitespace-nowrap">
-                    File Size
+                    <button
+                      type="button"
+                      className="w-full text-left hover:text-foreground"
+                      onClick={() => handleSort("lastFileSize")}
+                    >
+                      File Size{getSortIndicator("lastFileSize")}
+                    </button>
                   </th>
                   <th className="px-4 py-3 text-xs font-semibold uppercase tracking-wide text-muted-foreground">
-                    Last User
+                    <button
+                      type="button"
+                      className="w-full text-left hover:text-foreground"
+                      onClick={() => handleSort("lastAccessedBy")}
+                    >
+                      Last User{getSortIndicator("lastAccessedBy")}
+                    </button>
                   </th>
                   <th className="px-4 py-3 text-xs font-semibold uppercase tracking-wide text-muted-foreground text-right">
-                    Sessions
+                    <button
+                      type="button"
+                      className="w-full text-right hover:text-foreground"
+                      onClick={() => handleSort("usersCount")}
+                    >
+                      Users{getSortIndicator("usersCount")}
+                    </button>
+                  </th>
+                  <th className="px-4 py-3 text-xs font-semibold uppercase tracking-wide text-muted-foreground text-right">
+                    <button
+                      type="button"
+                      className="w-full text-right hover:text-foreground"
+                      onClick={() => handleSort("sessionCount")}
+                    >
+                      Sessions{getSortIndicator("sessionCount")}
+                    </button>
                   </th>
                 </tr>
               </thead>
               <tbody>
-                {items.map((item) => {
+                {sortedItems.map((item) => {
                   const dt = item.lastAccessedAt
                     ? new Date(item.lastAccessedAt)
                     : null;
                   const dateLabel = dt ? format(dt, "MM/dd/yy") : "-";
                   const timeLabel = dt ? format(dt, "h:mm a") : "-";
-                  const userLabel =
-                    item.lastAccessedByFullName?.trim() ||
-                    item.lastAccessedBy ||
-                    "-";
+                  const userLabel = item.lastAccessedByFullName?.trim() || "-";
 
                   return (
                     <tr
@@ -129,6 +279,9 @@ export default function AllModels() {
                       </td>
                       <td className="px-4 py-3 max-w-48 truncate">
                         {userLabel}
+                      </td>
+                      <td className="px-4 py-3 tabular-nums text-right">
+                        {item.usersCount}
                       </td>
                       <td className="px-4 py-3 tabular-nums text-right">
                         {item.sessionCount}

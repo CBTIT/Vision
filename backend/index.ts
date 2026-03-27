@@ -1,5 +1,6 @@
 import express from "express";
 import cors from "cors";
+import cookieParser from "cookie-parser";
 import activeRouter from "./routes/active.js";
 import "dotenv/config";
 import { connectDB } from "./db.js";
@@ -9,6 +10,8 @@ import overviewRouter from "./routes/overview.js";
 import pluginRouter from "./routes/plugin.js";
 import usersRouter from "./routes/users.js";
 import modelsRouter from "./routes/models.js";
+import cloudRouter from "./routes/cloud.js";
+import authRouter from "./routes/auth.js";
 
 const app = express();
 const PORT = process.env.PORT || 3000;
@@ -21,6 +24,8 @@ app.use(
 );
 
 app.use(express.json());
+app.use(cookieParser());
+app.use("/api/auth", authRouter);
 app.use("/api/active", activeRouter);
 app.use("/api/sessions", sessionRouter);
 app.use("/api/syncs", syncRouter);
@@ -28,6 +33,7 @@ app.use("/api/overview", overviewRouter);
 app.use("/api/plugins", pluginRouter);
 app.use("/api/users", usersRouter);
 app.use("/api/models", modelsRouter);
+app.use("/api/cloud", cloudRouter);
 
 const startServer = async () => {
   try {

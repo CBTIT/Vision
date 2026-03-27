@@ -10,8 +10,38 @@ type UserSummary = {
   syncsCount: number;
   pluginUseCount: number;
   pluginVersions: string[];
+  pluginVersionDetails: Array<{
+    pluginVersion: string;
+    revitVersions: string[];
+  }>;
   lastActiveAt: string;
 };
+
+function compareVersionStrings(left: string, right: string): number {
+  const leftParts = left.split(/[^0-9A-Za-z]+/).filter(Boolean);
+  const rightParts = right.split(/[^0-9A-Za-z]+/).filter(Boolean);
+  const maxLength = Math.max(leftParts.length, rightParts.length);
+
+  for (let index = 0; index < maxLength; index += 1) {
+    const leftPart = leftParts[index] ?? "";
+    const rightPart = rightParts[index] ?? "";
+
+    const leftNumber = Number(leftPart);
+    const rightNumber = Number(rightPart);
+    const leftIsNumber = leftPart !== "" && Number.isFinite(leftNumber);
+    const rightIsNumber = rightPart !== "" && Number.isFinite(rightNumber);
+
+    if (leftIsNumber && rightIsNumber && leftNumber !== rightNumber) {
+      return leftNumber - rightNumber;
+    }
+
+    if (leftPart !== rightPart) {
+      return leftPart.localeCompare(rightPart, undefined, { numeric: true });
+    }
+  }
+
+  return left.localeCompare(right, undefined, { numeric: true });
+}
 
 export const getUsersSummary = async (): Promise<UserSummary[]> => {
   const [
@@ -52,7 +82,10 @@ export const getUsersSummary = async (): Promise<UserSummary[]> => {
     ]),
     RevitSession.aggregate<{
       _id: string;
-      pluginVersions: string[];
+      pluginVersionDetails: Array<{
+        pluginVersion: string;
+        revitVersions: string[];
+      }>;
     }>([
       {
         $match: {
@@ -65,6 +98,7 @@ export const getUsersSummary = async (): Promise<UserSummary[]> => {
           pluginVersion: {
             $ifNull: ["$cbtAssemblyVersion", "$cbtToolsVersion"],
           },
+          revitVersion: { $ifNull: ["$revitVersion", ""] },
         },
       },
       {
@@ -74,8 +108,30 @@ export const getUsersSummary = async (): Promise<UserSummary[]> => {
       },
       {
         $group: {
+          _id: {
+            autodeskUserName: "$autodeskUserName",
+            pluginVersion: "$pluginVersion",
+          },
+          revitVersions: { $addToSet: "$revitVersion" },
+        },
+      },
+      {
+        $project: {
+          _id: 0,
+          autodeskUserName: "$_id.autodeskUserName",
+          pluginVersion: "$_id.pluginVersion",
+          revitVersions: 1,
+        },
+      },
+      {
+        $group: {
           _id: "$autodeskUserName",
-          pluginVersions: { $addToSet: "$pluginVersion" },
+          pluginVersionDetails: {
+            $push: {
+              pluginVersion: "$pluginVersion",
+              revitVersions: "$revitVersions",
+            },
+          },
         },
       },
     ]),
@@ -111,13 +167,28 @@ export const getUsersSummary = async (): Promise<UserSummary[]> => {
   const pluginUseCountMap = new Map(
     pluginCounts.map((row) => [row._id, row.pluginUseCount]),
   );
-  const pluginVersionsMap = new Map(
+  const pluginVersionDetailsMap = new Map(
     pluginVersions.map((row) => [
       row._id,
-      row.pluginVersions
-        .filter((value): value is string => typeof value === "string")
-        .map((value) => value.trim())
-        .filter((value) => value.length > 0),
+      row.pluginVersionDetails
+        .filter(
+          (
+            detail,
+          ): detail is { pluginVersion: string; revitVersions: string[] } =>
+            typeof detail?.pluginVersion === "string" &&
+            detail.pluginVersion.trim().length > 0,
+        )
+        .map((detail) => ({
+          pluginVersion: detail.pluginVersion.trim(),
+          revitVersions: detail.revitVersions
+            .filter((value): value is string => typeof value === "string")
+            .map((value) => value.trim())
+            .filter((value) => value.length > 0)
+            .sort(compareVersionStrings),
+        }))
+        .sort((left, right) =>
+          compareVersionStrings(left.pluginVersion, right.pluginVersion),
+        ),
     ]),
   );
 
@@ -133,17 +204,23 @@ export const getUsersSummary = async (): Promise<UserSummary[]> => {
     }
   }
 
-  const items: UserSummary[] = Array.from(usernames).map(
-    (autodeskUserName) => ({
+  const items: UserSummary[] = Array.from(usernames).map((autodeskUserName) => {
+    const pluginVersionDetails =
+      pluginVersionDetailsMap.get(autodeskUserName) ?? [];
+
+    return {
       autodeskUserName,
       fullName: fullNameMap.get(autodeskUserName) ?? "",
       sessionsCount: sessionsCountMap.get(autodeskUserName) ?? 0,
       syncsCount: syncsCountMap.get(autodeskUserName) ?? 0,
       pluginUseCount: pluginUseCountMap.get(autodeskUserName) ?? 0,
-      pluginVersions: pluginVersionsMap.get(autodeskUserName) ?? [],
+      pluginVersions: pluginVersionDetails.map(
+        (detail) => detail.pluginVersion,
+      ),
+      pluginVersionDetails,
       lastActiveAt: lastActiveMap.get(autodeskUserName) ?? "",
-    }),
-  );
+    };
+  });
 
   return items.sort((a, b) => {
     const aName = (a.fullName || a.autodeskUserName).toLowerCase();
