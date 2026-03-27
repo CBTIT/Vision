@@ -10,9 +10,9 @@ import { AuthProvider } from "./contexts/AuthContext.tsx";
 const redirectTo = sessionStorage.getItem("redirectTo");
 if (redirectTo) {
   sessionStorage.removeItem("redirectTo");
-  // Replace the URL back to what the user tried to visit (without the /Vision/ prefix since basename handles it)
-  const pathWithoutBase = redirectTo.replace("/Vision/", "/");
-  window.history.replaceState(null, "", pathWithoutBase);
+  if (redirectTo.startsWith("/Vision/")) {
+    window.history.replaceState(null, "", redirectTo);
+  }
 }
 
 createRoot(document.getElementById("root")!).render(
