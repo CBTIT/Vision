@@ -1,5 +1,6 @@
 import express from "express";
 import cors from "cors";
+import cookieParser from "cookie-parser";
 import activeRouter from "./routes/active.js";
 import "dotenv/config";
 import { connectDB } from "./db.js";
@@ -10,6 +11,7 @@ import pluginRouter from "./routes/plugin.js";
 import usersRouter from "./routes/users.js";
 import modelsRouter from "./routes/models.js";
 import cloudRouter from "./routes/cloud.js";
+import authRouter from "./routes/auth.js";
 const app = express();
 const PORT = process.env.PORT || 3000;
 app.use(cors({
@@ -17,6 +19,8 @@ app.use(cors({
     credentials: true,
 }));
 app.use(express.json());
+app.use(cookieParser());
+app.use("/api/auth", authRouter);
 app.use("/api/active", activeRouter);
 app.use("/api/sessions", sessionRouter);
 app.use("/api/syncs", syncRouter);

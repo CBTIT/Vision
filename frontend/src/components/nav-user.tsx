@@ -45,7 +45,14 @@ export function NavUser({ user }: NavUserProp) {
 
   const handleIconUpdate = (newIcon: string) => {
     setShowEditIcon(false);
-    setUser({ ...user, profileIcon: newIcon } as any);
+    setUser((prev) =>
+      prev
+        ? {
+            ...prev,
+            profileIcon: newIcon,
+          }
+        : prev,
+    );
   };
 
   const profileIcon = user.profileIcon || "user";

@@ -14,9 +14,7 @@ export const getCloudProjectDetailsController = async (req, res) => {
         const hubParam = req.params.hubId;
         const projectParam = req.params.projectId;
         const hubId = decodeURIComponent(Array.isArray(hubParam) ? hubParam[0] || "" : hubParam || "").trim();
-        const projectId = decodeURIComponent(Array.isArray(projectParam)
-            ? projectParam[0] || ""
-            : projectParam || "").trim();
+        const projectId = decodeURIComponent(Array.isArray(projectParam) ? projectParam[0] || "" : projectParam || "").trim();
         if (!hubId || !projectId) {
             return res
                 .status(400)

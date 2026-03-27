@@ -1,0 +1,10 @@
+import express from "express";
+import { loginController, logoutController, changePasswordController, getMeController, updateProfileIconController, } from "../controllers/authController.js";
+import { authMiddleware } from "../middleware/authMiddleware.js";
+const authRouter = express.Router();
+authRouter.post("/login", loginController);
+authRouter.post("/logout", logoutController);
+authRouter.post("/change-password", authMiddleware, changePasswordController);
+authRouter.put("/profile-icon", authMiddleware, updateProfileIconController);
+authRouter.get("/me", authMiddleware, getMeController);
+export default authRouter;

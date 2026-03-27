@@ -2,6 +2,26 @@ import UserRegistered from "../models/UserRegistered.js";
 import bcrypt from "bcryptjs";
 import jwt from "jsonwebtoken";
 
+const VALID_PROFILE_ICONS = [
+  "user",
+  "cat",
+  "dog",
+  "bird",
+  "fish",
+  "feather",
+  "bug",
+  "snail",
+  "turtle",
+  "rabbit",
+  "squirrel",
+  "wolf",
+  "paw",
+  "deer",
+  "fox",
+] as const;
+
+type ProfileIcon = (typeof VALID_PROFILE_ICONS)[number];
+
 export interface AuthPayload {
   userId: string;
   email: string;
@@ -12,7 +32,12 @@ export const loginService = async (
   password: string,
 ): Promise<{
   token: string;
-  user: { email: string; userId: string; fullName?: string };
+  user: {
+    email: string;
+    userId: string;
+    fullName?: string;
+    profileIcon?: string;
+  };
 }> => {
   const user = await UserRegistered.findOne({ email: email.toLowerCase() });
 
@@ -37,6 +62,7 @@ export const loginService = async (
       email: user.email,
       userId: user._id.toString(),
       fullName: user.fullName || undefined,
+      profileIcon: user.profileIcon || "user",
     },
   };
 };
@@ -80,25 +106,7 @@ export const updateProfileIconService = async (
   userId: string,
   profileIcon: string,
 ): Promise<void> => {
-  const validIcons = [
-    "user",
-    "cat",
-    "dog",
-    "bird",
-    "fish",
-    "feather",
-    "bug",
-    "snail",
-    "turtle",
-    "rabbit",
-    "squirrel",
-    "wolf",
-    "paw",
-    "deer",
-    "fox",
-  ];
-
-  if (!validIcons.includes(profileIcon)) {
+  if (!VALID_PROFILE_ICONS.includes(profileIcon as ProfileIcon)) {
     throw new Error("Invalid profile icon");
   }
 
@@ -107,6 +115,6 @@ export const updateProfileIconService = async (
     throw new Error("User not found");
   }
 
-  user.profileIcon = profileIcon;
+  user.profileIcon = profileIcon as ProfileIcon;
   await user.save();
 };

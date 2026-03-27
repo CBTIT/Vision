@@ -1,4 +1,4 @@
-import React, { useState } from "react";
+import React, { useEffect, useRef, useState } from "react";
 import { useNavigate } from "react-router-dom";
 import { login } from "../lib/api";
 import { useAuth } from "../contexts/AuthContext";
@@ -14,8 +14,143 @@ export default function Login() {
   const [error, setError] = useState("");
   const [isLoading, setIsLoading] = useState(false);
   const [showWelcome, setShowWelcome] = useState(false);
+  const networkCanvasRef = useRef<HTMLCanvasElement | null>(null);
   const navigate = useNavigate();
   const { setUser } = useAuth();
+
+  const isOverlayVisible = isLoading || showWelcome;
+
+  useEffect(() => {
+    if (!isOverlayVisible) {
+      return;
+    }
+
+    const canvas = networkCanvasRef.current;
+    if (!canvas) {
+      return;
+    }
+
+    const context = canvas.getContext("2d");
+    if (!context) {
+      return;
+    }
+
+    type NetworkPoint = {
+      x: number;
+      y: number;
+      vx: number;
+      vy: number;
+      radius: number;
+      phase: number;
+    };
+
+    const points: NetworkPoint[] = [];
+    let width = window.innerWidth;
+    let height = window.innerHeight;
+    let animationFrame = 0;
+
+    const resizeCanvas = () => {
+      width = window.innerWidth;
+      height = window.innerHeight;
+      const pixelRatio = Math.min(window.devicePixelRatio || 1, 2);
+      canvas.width = Math.floor(width * pixelRatio);
+      canvas.height = Math.floor(height * pixelRatio);
+      canvas.style.width = `${width}px`;
+      canvas.style.height = `${height}px`;
+      context.setTransform(pixelRatio, 0, 0, pixelRatio, 0, 0);
+
+      const pointCount = Math.max(
+        70,
+        Math.min(140, Math.floor((width * height) / 18000)),
+      );
+
+      points.length = 0;
+      for (let i = 0; i < pointCount; i += 1) {
+        points.push({
+          x: Math.random() * width,
+          y: Math.random() * height,
+          vx: (Math.random() - 0.5) * 0.42,
+          vy: (Math.random() - 0.5) * 0.42,
+          radius: 1 + Math.random() * 1.6,
+          phase: Math.random() * Math.PI * 2,
+        });
+      }
+    };
+
+    const drawFrame = (timestamp: number) => {
+      context.clearRect(0, 0, width, height);
+
+      const background = context.createLinearGradient(0, 0, width, height);
+      background.addColorStop(0, "#050505");
+      background.addColorStop(1, "#1a1a1a");
+      context.fillStyle = background;
+      context.fillRect(0, 0, width, height);
+
+      const maxDistance = 150;
+      const pulse = (Math.sin(timestamp * 0.0014) + 1) / 2;
+
+      for (let i = 0; i < points.length; i += 1) {
+        const pointA = points[i];
+
+        pointA.x += pointA.vx;
+        pointA.y += pointA.vy;
+
+        if (pointA.x <= 0 || pointA.x >= width) {
+          pointA.vx *= -1;
+        }
+        if (pointA.y <= 0 || pointA.y >= height) {
+          pointA.vy *= -1;
+        }
+
+        pointA.x = Math.min(width, Math.max(0, pointA.x));
+        pointA.y = Math.min(height, Math.max(0, pointA.y));
+
+        for (let j = i + 1; j < points.length; j += 1) {
+          const pointB = points[j];
+          const dx = pointA.x - pointB.x;
+          const dy = pointA.y - pointB.y;
+          const distance = Math.sqrt(dx * dx + dy * dy);
+
+          if (distance > maxDistance) {
+            continue;
+          }
+
+          const proximity = 1 - distance / maxDistance;
+          const flicker =
+            0.35 +
+            0.65 *
+              ((Math.sin(timestamp * 0.002 + pointA.phase + pointB.phase) + 1) /
+                2);
+          const alpha = proximity * 0.36 * (0.55 * pulse + 0.45 * flicker);
+
+          context.strokeStyle = `rgba(235, 235, 235, ${alpha.toFixed(3)})`;
+          context.lineWidth = proximity * 1.2 + 0.2;
+          context.beginPath();
+          context.moveTo(pointA.x, pointA.y);
+          context.lineTo(pointB.x, pointB.y);
+          context.stroke();
+        }
+
+        const pointGlow =
+          0.45 + 0.35 * Math.sin(timestamp * 0.002 + pointA.phase);
+        context.fillStyle = `rgba(255, 255, 255, ${(0.35 + pointGlow).toFixed(3)})`;
+        context.beginPath();
+        context.arc(pointA.x, pointA.y, pointA.radius, 0, Math.PI * 2);
+        context.fill();
+      }
+
+      animationFrame = window.requestAnimationFrame(drawFrame);
+    };
+
+    resizeCanvas();
+    animationFrame = window.requestAnimationFrame(drawFrame);
+    window.addEventListener("resize", resizeCanvas);
+
+    return () => {
+      window.cancelAnimationFrame(animationFrame);
+      window.removeEventListener("resize", resizeCanvas);
+    };
+  }, [isOverlayVisible]);
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -39,22 +174,32 @@ export default function Login() {
     }
   };
 
-  // Welcome screen overlay
-  if (showWelcome) {
-    return (
-      <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50">
-        <div className="text-center">
-          <h2 className="text-4xl font-bold text-white mb-2">Welcome!</h2>
-          <p className="text-lg text-white/80">
-            Getting your dashboard ready...
-          </p>
-        </div>
-      </div>
-    );
-  }
-
   return (
     <div className="min-h-screen flex items-center justify-center bg-background p-4">
+      {isOverlayVisible && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center overflow-hidden bg-black/60">
+          <canvas
+            ref={networkCanvasRef}
+            className="login-network-canvas absolute inset-0"
+          />
+          <div className="absolute inset-0 login-network-vignette" />
+          <div className="relative text-center px-6 py-7 rounded-2xl login-loading-panel">
+            <h2 className="text-3xl sm:text-4xl font-black tracking-tight text-white drop-shadow-md">
+              {showWelcome ? "Welcome!" : "Connecting to Backend"}
+            </h2>
+            <p className="mt-3 text-sm sm:text-base font-semibold text-white/90">
+              {showWelcome
+                ? "Getting your dashboard ready..."
+                : "Please wait while we prepare your workspace..."}
+            </p>
+            <div className="mt-5 flex items-center justify-center gap-2">
+              <span className="h-2.5 w-2.5 rounded-full bg-white login-loading-dot login-loading-dot-1" />
+              <span className="h-2.5 w-2.5 rounded-full bg-white login-loading-dot login-loading-dot-2" />
+              <span className="h-2.5 w-2.5 rounded-full bg-white login-loading-dot login-loading-dot-3" />
+            </div>
+          </div>
+        </div>
+      )}
       <div className="w-full max-w-md">
         {/* Header */}
         <div className="mb-8">
