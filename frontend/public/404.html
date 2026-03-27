@@ -4,14 +4,8 @@
     <meta charset="utf-8" />
     <title>Redirect</title>
     <script type="text/javascript">
-      // Capture the path the user tried to access
-      var path = window.location.pathname;
-      // Redirect to index.html with the path preserved as a query parameter
-      window.location.replace(
-        path.split("/").slice(0, 3).join("/") +
-          "/index.html?redirect=" +
-          encodeURIComponent(path),
-      );
+      // Redirect all 404s to /Vision/index.html which lets React Router handle the routing
+      window.location.replace("/Vision/index.html");
     </script>
   </head>
 </html>
