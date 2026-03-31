@@ -369,6 +369,11 @@ export type ModelSummaryItem = {
   sessionCount: number;
 };
 
+export type ModelSizeHistoryPoint = {
+  date: string;
+  maxFileSize: number;
+};
+
 export async function fetchModelsList(params?: {
   from?: string;
   to?: string;
@@ -380,6 +385,21 @@ export async function fetchModelsList(params?: {
     "/api/models",
     query,
   );
+}
+
+export async function fetchModelSizeHistory(params: {
+  modelId: string;
+  from?: string;
+  to?: string;
+}): Promise<ModelSizeHistoryPoint[]> {
+  const query: Record<string, string> = {};
+  if (params.from) query.from = params.from;
+  if (params.to) query.to = params.to;
+  const data = await apiFetch<{
+    modelId: string;
+    points: ModelSizeHistoryPoint[];
+  }>(`/api/models/${encodeURIComponent(params.modelId)}/size-history`, query);
+  return data.points;
 }
 
 export type CloudProjectListItem = {

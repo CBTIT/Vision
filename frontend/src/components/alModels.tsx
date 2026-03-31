@@ -1,12 +1,28 @@
 import { useEffect, useMemo, useState } from "react";
 import { format } from "date-fns";
+import {
+  CartesianGrid,
+  Line,
+  LineChart,
+  ResponsiveContainer,
+  Tooltip,
+  XAxis,
+  YAxis,
+} from "recharts";
 
 import { useHeaderRight } from "./header-context";
 import { DateRangeFilter } from "./date-range-filter";
 import { useDateRange } from "./date-range-context";
+import { useTheme } from "@/hooks/use-theme";
 import { useAutoRefresh } from "@/hooks/use-auto-refresh";
 import { RefreshButton } from "@/components/refresh-button";
-import { fetchModelsList, type ModelSummaryItem } from "@/lib/api";
+import {
+  fetchModelsList,
+  fetchModelSizeHistory,
+  type ModelSizeHistoryPoint,
+  type ModelSummaryItem,
+} from "@/lib/api";
+import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Skeleton } from "@/components/ui/skeleton";
 
@@ -21,10 +37,178 @@ type SortKey =
 
 type SortDirection = "asc" | "desc";
 
+type ChartRow = ModelSizeHistoryPoint & {
+  dateLabel: string;
+};
+
 function formatFileSizeMb(value: number | null): string {
   if (value === null || value === undefined) return "-";
   if (!Number.isFinite(value) || value === 0) return "-";
   return `${value.toLocaleString()} MB`;
+}
+
+function getAdaptiveTicks(data: ChartRow[]): string[] {
+  if (data.length <= 1) return data.map((row) => row.date);
+
+  const maxTicks =
+    data.length <= 7
+      ? data.length
+      : data.length <= 14
+        ? 7
+        : data.length <= 31
+          ? 8
+          : 10;
+
+  const step = Math.max(1, Math.ceil((data.length - 1) / (maxTicks - 1)));
+  const ticks: string[] = [];
+
+  for (let index = 0; index < data.length; index += step) {
+    ticks.push(data[index].date);
+  }
+
+  const lastDate = data[data.length - 1].date;
+  if (ticks[ticks.length - 1] !== lastDate) {
+    ticks.push(lastDate);
+  }
+
+  return ticks;
+}
+
+function ModelHistoryTooltip({
+  active,
+  payload,
+}: {
+  active?: boolean;
+  payload?: Array<{ payload: ChartRow }>;
+}) {
+  if (!active || !payload?.length) return null;
+  const row = payload[0]?.payload;
+  if (!row) return null;
+
+  return (
+    <div className="rounded-md border border-border bg-background px-3 py-2 text-xs shadow-sm">
+      <p className="mb-1 font-semibold text-foreground">{row.dateLabel}</p>
+      <p className="text-blue-500 dark:text-blue-400">
+        Max size: {formatFileSizeMb(row.maxFileSize)}
+      </p>
+    </div>
+  );
+}
+
+function ModelSizeTrendChart({
+  model,
+  points,
+  loading,
+  onBack,
+}: {
+  model: ModelSummaryItem;
+  points: ModelSizeHistoryPoint[];
+  loading: boolean;
+  onBack: () => void;
+}) {
+  const chartData: ChartRow[] = points.map((point) => ({
+    ...point,
+    dateLabel: format(new Date(point.date), "dd MMM yyyy"),
+  }));
+  const xTicks = getAdaptiveTicks(chartData);
+  const { isDark } = useTheme();
+  const axisStroke = isDark ? "#4b5563" : "#6b7280";
+  const gridStroke = isDark ? "#374151" : "#d1d5db";
+
+  return (
+    <Card className="border-border/90 bg-background/95 shadow-sm">
+      <CardHeader className="flex flex-row items-start justify-between gap-3 pb-3">
+        <div className="min-w-0">
+          <CardTitle className="truncate">Model Size Over Time</CardTitle>
+          <p className="mt-1 text-xs text-muted-foreground">
+            {model.fileName || model.modelId}
+            {model.projectName ? ` • ${model.projectName}` : ""}
+          </p>
+        </div>
+        <Button type="button" variant="outline" size="sm" onClick={onBack}>
+          Back to table
+        </Button>
+      </CardHeader>
+      <CardContent>
+        <div className="flex min-h-[22rem] flex-col rounded-xl border border-border/70 bg-muted/20 p-3">
+          {loading ? (
+            <Skeleton className="h-full min-h-80 w-full" />
+          ) : chartData.length === 0 ? (
+            <div className="flex h-full min-h-80 items-center justify-center text-sm text-muted-foreground">
+              No size history found for this model in the selected range.
+            </div>
+          ) : (
+            <div className="h-80 w-full">
+              <ResponsiveContainer width="100%" height="100%">
+                <LineChart
+                  data={chartData}
+                  margin={{ top: 20, right: 16, bottom: 6, left: 4 }}
+                >
+                  <CartesianGrid
+                    vertical
+                    horizontal
+                    strokeDasharray="4 6"
+                    stroke={gridStroke}
+                    strokeOpacity={0.9}
+                  />
+                  <XAxis
+                    dataKey="date"
+                    ticks={xTicks}
+                    interval={0}
+                    axisLine={{ stroke: axisStroke, strokeWidth: 1.4 }}
+                    tickLine={{ stroke: axisStroke, strokeWidth: 1.2 }}
+                    tick={{
+                      fill: "hsl(var(--muted-foreground))",
+                      fontSize: 12,
+                      fontWeight: 500,
+                    }}
+                    tickMargin={10}
+                    tickFormatter={(value: string) =>
+                      format(new Date(value), "dd MMM")
+                    }
+                    minTickGap={32}
+                  />
+                  <YAxis
+                    allowDecimals={false}
+                    domain={[0, "auto"]}
+                    axisLine={{ stroke: axisStroke, strokeWidth: 1.4 }}
+                    tickLine={{ stroke: axisStroke, strokeWidth: 1.2 }}
+                    tick={{
+                      fill: "hsl(var(--muted-foreground))",
+                      fontSize: 12,
+                      fontWeight: 500,
+                    }}
+                    tickMargin={8}
+                    width={72}
+                    tickFormatter={(value: number) => `${value.toLocaleString()} MB`}
+                  />
+                  <Tooltip
+                    content={<ModelHistoryTooltip />}
+                    cursor={{
+                      stroke: "#60a5fa",
+                      strokeWidth: 2,
+                      strokeOpacity: 0.9,
+                    }}
+                  />
+                  <Line
+                    type="monotone"
+                    dataKey="maxFileSize"
+                    stroke="#3b82f6"
+                    strokeWidth={3}
+                    dot={{ r: 3, fill: "#3b82f6", strokeWidth: 0 }}
+                    activeDot={{ r: 5, fill: "#3b82f6", strokeWidth: 0 }}
+                    isAnimationActive
+                    animationDuration={700}
+                    animationEasing="ease-out"
+                  />
+                </LineChart>
+              </ResponsiveContainer>
+            </div>
+          )}
+        </div>
+      </CardContent>
+    </Card>
+  );
 }
 
 export default function AllModels() {
@@ -36,6 +220,9 @@ export default function AllModels() {
   const [items, setItems] = useState<ModelSummaryItem[]>([]);
   const [sortKey, setSortKey] = useState<SortKey>("lastFileSize");
   const [sortDirection, setSortDirection] = useState<SortDirection>("desc");
+  const [selectedModelId, setSelectedModelId] = useState<string | null>(null);
+  const [historyLoading, setHistoryLoading] = useState(false);
+  const [historyPoints, setHistoryPoints] = useState<ModelSizeHistoryPoint[]>([]);
 
   const fromStr = format(from, "yyyy-MM-dd");
   const toStr = format(to, "yyyy-MM-dd");
@@ -145,6 +332,55 @@ export default function AllModels() {
     return copied;
   }, [items, sortDirection, sortKey]);
 
+  const selectedModel = useMemo(
+    () =>
+      selectedModelId
+        ? items.find((item) => item.modelId === selectedModelId) ?? null
+        : null,
+    [items, selectedModelId],
+  );
+
+  useEffect(() => {
+    if (!selectedModelId) {
+      setHistoryPoints([]);
+      setHistoryLoading(false);
+      return;
+    }
+
+    let cancelled = false;
+    setHistoryLoading(true);
+    fetchModelSizeHistory({ modelId: selectedModelId, from: fromStr, to: toStr })
+      .then((points) => {
+        if (!cancelled) {
+          setHistoryPoints(points);
+        }
+      })
+      .catch(() => {
+        if (!cancelled) {
+          setHistoryPoints([]);
+        }
+      })
+      .finally(() => {
+        if (!cancelled) {
+          setHistoryLoading(false);
+        }
+      });
+
+    return () => {
+      cancelled = true;
+    };
+  }, [fromStr, selectedModelId, toStr, refreshKey]);
+
+  useEffect(() => {
+    if (!selectedModelId) return;
+    const isSelectedVisible = items.some((item) => item.modelId === selectedModelId);
+    if (!isSelectedVisible) {
+      setSelectedModelId(null);
+      setHistoryPoints([]);
+      setHistoryLoading(false);
+    }
+  }, [items, selectedModelId]);
+
   return (
     <div className="space-y-4">
       <Card className="shrink-0 border-border/90 bg-background/95 shadow-sm">
@@ -168,6 +404,13 @@ export default function AllModels() {
             No models found for this date range.
           </CardContent>
         </Card>
+      ) : selectedModel ? (
+        <ModelSizeTrendChart
+          model={selectedModel}
+          points={historyPoints}
+          loading={historyLoading}
+          onBack={() => setSelectedModelId(null)}
+        />
       ) : (
         <Card className="border-border/90 bg-background/95 shadow-sm">
           <div className="overflow-x-auto">
@@ -260,7 +503,12 @@ export default function AllModels() {
                   return (
                     <tr
                       key={item.modelId}
-                      className="border-b last:border-b-0 hover:bg-muted/30"
+                      className={`border-b last:border-b-0 cursor-pointer transition-colors ${
+                        selectedModelId === item.modelId
+                          ? "bg-blue-50 dark:bg-blue-950/30"
+                          : "hover:bg-muted/30"
+                      }`}
+                      onClick={() => setSelectedModelId(item.modelId)}
                     >
                       <td className="px-4 py-3 font-medium max-w-56 truncate">
                         {item.fileName || "-"}

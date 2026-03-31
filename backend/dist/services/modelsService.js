@@ -1,5 +1,11 @@
 import RevitSession from "../models/RevitSession.js";
 import UserMappings from "../models/UserMappings.js";
+function escapeRegex(value) {
+    return value.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+}
+function normalizeModelId(value) {
+    return value.trim().replace(/^\{+|\}+$/g, "");
+}
 export const getModelsSummary = async (from, to) => {
     const matchStage = {
         $or: [
@@ -95,4 +101,60 @@ export const getModelsSummary = async (from, to) => {
             sessionCount: r.sessionCount,
         };
     });
+};
+export const getModelSizeHistory = async (modelId, from, to) => {
+    const selectedIdentifier = modelId.trim();
+    const normalizedModelId = normalizeModelId(modelId);
+    if (!selectedIdentifier || !normalizedModelId) {
+        return [];
+    }
+    const matchStage = {
+        $or: [
+            {
+                modelId: {
+                    $regex: `^\\{?${escapeRegex(normalizedModelId)}\\}?$`,
+                    $options: "i",
+                },
+            },
+            {
+                fileName: {
+                    $regex: `^${escapeRegex(selectedIdentifier)}$`,
+                    $options: "i",
+                },
+            },
+        ],
+        fileSize: { $type: "number", $gt: 0 },
+    };
+    if (from || to) {
+        const dateFilter = {};
+        if (from) {
+            dateFilter["$gte"] = new Date(from);
+        }
+        if (to) {
+            const endExclusive = new Date(to);
+            endExclusive.setDate(endExclusive.getDate() + 1);
+            dateFilter["$lt"] = endExclusive;
+        }
+        matchStage["dateTime"] = dateFilter;
+    }
+    const rows = await RevitSession.aggregate([
+        { $match: matchStage },
+        {
+            $group: {
+                _id: {
+                    $dateToString: {
+                        format: "%Y-%m-%d",
+                        date: "$dateTime",
+                        timezone: "UTC",
+                    },
+                },
+                maxFileSize: { $max: "$fileSize" },
+            },
+        },
+        { $sort: { _id: 1 } },
+    ]);
+    return rows.map((row) => ({
+        date: row._id,
+        maxFileSize: row.maxFileSize,
+    }));
 };
