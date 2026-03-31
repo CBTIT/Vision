@@ -549,7 +549,7 @@ export default function ActiveUsers() {
       </Card>
 
       {loading ? (
-        <div className="grid grid-cols-1 gap-3 md:grid-cols-2 xl:grid-cols-4">
+        <div className="grid grid-cols-1 gap-3 md:grid-cols-2 xl:grid-cols-3 2xl:grid-cols-4">
           {Array.from({ length: 9 }).map((_, index) => (
             <Skeleton key={index} className="h-52 w-full" />
           ))}
@@ -561,7 +561,7 @@ export default function ActiveUsers() {
           </CardContent>
         </Card>
       ) : (
-        <div className="grid grid-cols-1 gap-3 md:grid-cols-2 xl:grid-cols-4">
+        <div className="grid grid-cols-1 gap-3 md:grid-cols-2 xl:grid-cols-3 2xl:grid-cols-4">
           {items.map((item) => {
             const displayName = item.fullName?.trim() || item.user;
             const updatedAt = formatDateTime(item.ts);
@@ -574,19 +574,19 @@ export default function ActiveUsers() {
             return (
               <Card
                 key={item._id}
-                className="border-border/90 bg-background/95 shadow-sm"
+                className="h-full border-border/90 bg-background/95 shadow-sm"
               >
                 <CardHeader className="space-y-2 pb-3">
                   <div className="flex items-start justify-between gap-3">
-                    <div>
-                      <CardTitle className="text-base leading-tight">
+                    <div className="min-w-0 flex-1">
+                      <CardTitle className="truncate text-base leading-tight">
                         {displayName}
                       </CardTitle>
-                      <p className="mt-1 text-xs text-muted-foreground">
+                      <p className="mt-1 truncate text-xs text-muted-foreground">
                         @{item.user}
                       </p>
                     </div>
-                    <span className="inline-flex rounded-full border border-emerald-300 bg-emerald-50 px-2 py-0.5 text-[11px] font-semibold text-emerald-700 dark:border-emerald-700 dark:bg-emerald-950/60 dark:text-emerald-400">
+                    <span className="inline-flex shrink-0 rounded-full border border-emerald-300 bg-emerald-50 px-2 py-0.5 text-[11px] font-semibold text-emerald-700 dark:border-emerald-700 dark:bg-emerald-950/60 dark:text-emerald-400">
                       Live
                     </span>
                   </div>
@@ -607,8 +607,8 @@ export default function ActiveUsers() {
                   </div>
                 </CardHeader>
 
-                <CardContent className="space-y-3 pt-0">
-                  <div>
+                <CardContent className="flex h-full flex-col space-y-3 pt-0">
+                  <div className="min-w-0 flex-1">
                     <p className="mb-2 text-[11px] font-semibold uppercase tracking-wide text-muted-foreground">
                       Open Documents ({item.openDocs.length})
                     </p>
@@ -632,11 +632,13 @@ export default function ActiveUsers() {
                                   : "bg-muted/20"
                               }`}
                             >
-                              <p className="flex items-center gap-1.5 text-sm font-medium wrap-break-word">
-                                <FileText className="size-3.5 text-muted-foreground" />
-                                {doc.modelName || "Untitled Model"}
-                              </p>
-                              <p className="mt-1 text-[11px] text-muted-foreground wrap-break-word">
+                              <div className="flex min-w-0 items-start gap-1.5">
+                                <FileText className="mt-0.5 size-3.5 shrink-0 text-muted-foreground" />
+                                <p className="min-w-0 break-all text-sm font-medium">
+                                  {doc.modelName || "Untitled Model"}
+                                </p>
+                              </div>
+                              <p className="mt-1 break-all text-[11px] text-muted-foreground">
                                 Session: {doc.sessionId || "-"}
                               </p>
 
@@ -645,11 +647,13 @@ export default function ActiveUsers() {
                                   <p className="text-[11px] uppercase tracking-wide text-blue-700 dark:text-blue-400">
                                     Active View
                                   </p>
-                                  <p className="mt-1 flex items-center gap-1.5 text-sm font-semibold text-blue-900 wrap-break-word dark:text-blue-200">
-                                    <Eye className="size-3.5" />
-                                    {item.activeViewName || "-"}
-                                  </p>
-                                  <p className="text-[11px] text-blue-700/85 wrap-break-word dark:text-blue-400/80">
+                                  <div className="mt-1 flex min-w-0 items-start gap-1.5">
+                                    <Eye className="mt-0.5 size-3.5 shrink-0 text-blue-900 dark:text-blue-200" />
+                                    <p className="min-w-0 break-all text-sm font-semibold text-blue-900 dark:text-blue-200">
+                                      {item.activeViewName || "-"}
+                                    </p>
+                                  </div>
+                                  <p className="break-all text-[11px] text-blue-700/85 dark:text-blue-400/80">
                                     {item.activeProjectName || "-"}
                                   </p>
                                 </div>
@@ -661,12 +665,13 @@ export default function ActiveUsers() {
                     )}
                   </div>
 
-                  <div className="flex items-center justify-between gap-2 border-t pt-2.5">
+                  <div className="mt-auto flex flex-col gap-2 border-t pt-2.5 sm:flex-row sm:items-center sm:justify-between">
                     <p className="text-[11px] text-muted-foreground">
                       Updated {updatedAt}
                     </p>
                     <Button
                       size="sm"
+                      className="w-full sm:w-auto"
                       onClick={() => void openActiveSession(item)}
                       disabled={
                         (!activeSessionId && !activeModelId) || detailLoading

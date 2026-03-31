@@ -63,6 +63,7 @@ const revitHeartbeatSchema = new mongoose.Schema({
     type: Date,
     required: true,
     index: true,
+    expires: 180,
   },
 });
 

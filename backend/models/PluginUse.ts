@@ -20,6 +20,26 @@ const PluginUseSchema = new Schema(
       lowercase: true,
       index: true,
     },
+    plugin_name: {
+      type: String,
+      trim: true,
+      default: "",
+    },
+    pluginName: {
+      type: String,
+      trim: true,
+      default: "",
+    },
+    project_name: {
+      type: String,
+      trim: true,
+      default: "",
+    },
+    projectName: {
+      type: String,
+      trim: true,
+      default: "",
+    },
   },
   {
     versionKey: false,

@@ -39,7 +39,9 @@ export type SessionListItem = {
 export type SyncListItem = {
   _id: string;
   date: string;
+  revitSessionId?: string;
   projectId?: string;
+  cloudProjectName?: string;
   fileName?: string;
   modelId?: string;
   autodeskUserName?: string;
@@ -53,6 +55,8 @@ export type PluginUseItem = {
   autodeskUserName?: string;
   fullName?: string;
   email?: string;
+  plugin_name?: string;
+  project_name?: string;
   [key: string]: unknown;
 };
 
@@ -320,14 +324,28 @@ export async function fetchSyncsList(params: {
   return apiFetch<PaginatedListResponse<SyncListItem>>("/api/syncs", query);
 }
 
+export async function fetchSyncById(id: string): Promise<SyncListItem> {
+  return apiFetch<SyncListItem>(`/api/syncs/${id}`);
+}
+
 export async function fetchPluginUseList(params: {
   page: number;
   limit: number;
+  pluginName?: string;
 }): Promise<PaginatedListResponse<PluginUseItem>> {
-  return apiFetch<PaginatedListResponse<PluginUseItem>>("/api/plugins", {
+  const query: Record<string, string> = {
     page: String(params.page),
     limit: String(params.limit),
-  });
+  };
+  if (params.pluginName) {
+    query.pluginName = params.pluginName;
+  }
+  return apiFetch<PaginatedListResponse<PluginUseItem>>("/api/plugins", query);
+}
+
+export async function fetchPluginNames(): Promise<string[]> {
+  const data = await apiFetch<{ items: string[] }>("/api/plugins/names");
+  return data.items;
 }
 
 export async function fetchUsersSummary(): Promise<{

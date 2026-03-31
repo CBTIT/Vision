@@ -61,6 +61,7 @@ const revitHeartbeatSchema = new mongoose.Schema({
         type: Date,
         required: true,
         index: true,
+        expires: 180,
     },
 });
 export default mongoose.model("RevitHeartbeat", revitHeartbeatSchema, "revit_heartbeat");

@@ -1,6 +1,7 @@
 import { Request, Response } from "express";
 import {
   getPluginUseCount,
+  getPluginNames,
   getPluginUseList,
 } from "../services/pluginService.js";
 
@@ -25,6 +26,8 @@ export const getPluginUseListController = async (
     const filters = {
       limit: Number(req.query.limit) || undefined,
       page: Number(req.query.page) || undefined,
+      pluginName:
+        typeof req.query.pluginName === "string" ? req.query.pluginName : undefined,
     };
 
     const pluginUseList = await getPluginUseList(filters);
@@ -32,5 +35,15 @@ export const getPluginUseListController = async (
   } catch (err) {
     console.error("Error getting plugin use list:", err);
     return res.status(500).json({ error: "Failed to get plugin use list" });
+  }
+};
+
+export const getPluginNamesController = async (_req: Request, res: Response) => {
+  try {
+    const pluginNames = await getPluginNames();
+    return res.json({ items: pluginNames });
+  } catch (err) {
+    console.error("Error getting plugin names:", err);
+    return res.status(500).json({ error: "Failed to get plugin names" });
   }
 };

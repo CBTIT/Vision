@@ -8,6 +8,7 @@ import { useDateRange } from "./date-range-context";
 import { useAutoRefresh } from "@/hooks/use-auto-refresh";
 import { RefreshButton } from "@/components/refresh-button";
 import {
+  fetchPluginNames,
   fetchPluginUseList,
   type PaginatedListResponse,
   type PluginUseItem,
@@ -75,16 +76,18 @@ function PluginCard({
       onClick={onClick}
     >
       <CardContent className="py-4">
-        <div className="grid gap-3 md:grid-cols-3">
+        <div className="grid gap-3 md:grid-cols-2 xl:grid-cols-4">
           <div>
             <p className="text-xs text-muted-foreground">Full Name</p>
             <p className="font-medium truncate">{item.fullName || "-"}</p>
           </div>
           <div>
-            <p className="text-xs text-muted-foreground">Autodesk Username</p>
-            <p className="font-medium truncate">
-              {item.autodeskUserName || "-"}
-            </p>
+            <p className="text-xs text-muted-foreground">Plugin Name</p>
+            <p className="font-medium truncate">{item.plugin_name || "-"}</p>
+          </div>
+          <div>
+            <p className="text-xs text-muted-foreground">Project Name</p>
+            <p className="font-medium truncate">{item.project_name || "-"}</p>
           </div>
           <div>
             <p className="text-xs text-muted-foreground">Email</p>
@@ -103,6 +106,8 @@ export default function Plugins() {
   const [loading, setLoading] = useState(true);
   const [page, setPage] = useState(1);
   const [limit] = useState(10);
+  const [pluginNames, setPluginNames] = useState<string[]>([]);
+  const [selectedPluginName, setSelectedPluginName] = useState("all");
   const [selectedItem, setSelectedItem] = useState<PluginUseItem | null>(null);
   const [detailsOpen, setDetailsOpen] = useState(false);
   const [data, setData] = useState<PaginatedListResponse<PluginUseItem>>({
@@ -124,14 +129,29 @@ export default function Plugins() {
   }, [setHeaderRight, refresh]);
 
   useEffect(() => {
+    fetchPluginNames()
+      .then(setPluginNames)
+      .catch(() => setPluginNames([]));
+  }, [refreshKey]);
+
+  useEffect(() => {
+    setPage(1);
+  }, [selectedPluginName]);
+
+  useEffect(() => {
     setLoading(true);
-    fetchPluginUseList({ page, limit })
+    fetchPluginUseList({
+      page,
+      limit,
+      pluginName:
+        selectedPluginName === "all" ? undefined : selectedPluginName,
+    })
       .then(setData)
       .catch(() =>
         setData({ items: [], total: 0, page: 1, limit, totalPages: 1 }),
       )
       .finally(() => setLoading(false));
-  }, [page, limit, refreshKey]);
+  }, [page, limit, refreshKey, selectedPluginName]);
 
   const pageTokens = useMemo(
     () => buildPageTokens(data.page, data.totalPages),
@@ -143,8 +163,10 @@ export default function Plugins() {
     const toLabel = format(to, "dd MMM yyyy");
     const rangeLabel =
       fromLabel === toLabel ? fromLabel : `${fromLabel} - ${toLabel}`;
-    return `${rangeLabel} • ${data.total} total • Page ${data.page} of ${data.totalPages}`;
-  }, [from, to, data.total, data.page, data.totalPages]);
+    const pluginLabel =
+      selectedPluginName === "all" ? "All plugins" : selectedPluginName;
+    return `${rangeLabel} • ${pluginLabel} • ${data.total} total • Page ${data.page} of ${data.totalPages}`;
+  }, [from, to, data.total, data.page, data.totalPages, selectedPluginName]);
 
   const detailFields = useMemo(() => {
     if (!selectedItem) return [] as Array<{ label: string; value: string }>;
@@ -158,61 +180,109 @@ export default function Plugins() {
     <div className="flex h-full min-h-0 flex-col gap-4 overflow-hidden px-1 py-1">
       <Card className="shrink-0 border-border/90 bg-background/95 shadow-sm">
         <CardHeader className="pb-3">
-          <div className="flex flex-wrap items-center justify-between gap-3">
-            <div>
-              <CardTitle>Plugin Use</CardTitle>
-              <p className="text-xs text-muted-foreground">{subtitle}</p>
-            </div>
-            <div className="flex items-center gap-1.5">
-              <Button
-                variant="outline"
-                size="sm"
-                className="h-8 w-8 p-0"
-                type="button"
-                onClick={() => setPage((current) => Math.max(1, current - 1))}
-                disabled={loading || data.page <= 1}
-                aria-label="Previous page"
-              >
-                <ChevronLeft className="size-4" />
-              </Button>
+          <div className="flex flex-col gap-3">
+            <div className="flex flex-wrap items-center justify-between gap-3">
+              <div>
+                <CardTitle>Plugin Use</CardTitle>
+                <p className="text-xs text-muted-foreground">{subtitle}</p>
+              </div>
+              <div className="flex items-center gap-1.5">
+                <Button
+                  variant="outline"
+                  size="sm"
+                  className="h-8 w-8 p-0"
+                  type="button"
+                  onClick={() => setPage((current) => Math.max(1, current - 1))}
+                  disabled={loading || data.page <= 1}
+                  aria-label="Previous page"
+                >
+                  <ChevronLeft className="size-4" />
+                </Button>
 
-              {pageTokens.map((token, index) =>
-                typeof token === "number" ? (
-                  <Button
-                    key={token}
-                    variant={token === data.page ? "default" : "outline"}
-                    size="sm"
-                    className="h-8 min-w-8 px-2"
-                    type="button"
-                    onClick={() => setPage(token)}
-                    disabled={loading}
-                  >
-                    {token}
-                  </Button>
-                ) : (
-                  <span
-                    key={`${token}-${index}`}
-                    className="px-1 text-sm text-muted-foreground"
-                  >
-                    ...
-                  </span>
-                ),
-              )}
+                {pageTokens.map((token, index) =>
+                  typeof token === "number" ? (
+                    <Button
+                      key={token}
+                      variant={token === data.page ? "default" : "outline"}
+                      size="sm"
+                      className="h-8 min-w-8 px-2"
+                      type="button"
+                      onClick={() => setPage(token)}
+                      disabled={loading}
+                    >
+                      {token}
+                    </Button>
+                  ) : (
+                    <span
+                      key={`${token}-${index}`}
+                      className="px-1 text-sm text-muted-foreground"
+                    >
+                      ...
+                    </span>
+                  ),
+                )}
 
-              <Button
-                variant="outline"
-                size="sm"
-                className="h-8 w-8 p-0"
-                type="button"
-                onClick={() =>
-                  setPage((current) => Math.min(data.totalPages, current + 1))
-                }
-                disabled={loading || data.page >= data.totalPages}
-                aria-label="Next page"
-              >
-                <ChevronRight className="size-4" />
-              </Button>
+                <Button
+                  variant="outline"
+                  size="sm"
+                  className="h-8 w-8 p-0"
+                  type="button"
+                  onClick={() =>
+                    setPage((current) => Math.min(data.totalPages, current + 1))
+                  }
+                  disabled={loading || data.page >= data.totalPages}
+                  aria-label="Next page"
+                >
+                  <ChevronRight className="size-4" />
+                </Button>
+              </div>
             </div>
+
+            {pluginNames.length > 0 && (
+              <div className="flex flex-wrap items-center justify-between gap-2">
+                <div className="flex min-w-0 flex-wrap items-center gap-2">
+                  <p className="shrink-0 text-[11px] font-semibold uppercase tracking-wide text-muted-foreground">
+                    Plugin
+                  </p>
+                  <div className="flex min-w-0 flex-wrap gap-1.5">
+                    <Button
+                      type="button"
+                      size="xs"
+                      variant={
+                        selectedPluginName === "all" ? "default" : "outline"
+                      }
+                      onClick={() => setSelectedPluginName("all")}
+                    >
+                      All
+                    </Button>
+                    {pluginNames.map((pluginName) => (
+                      <Button
+                        key={pluginName}
+                        type="button"
+                        size="xs"
+                        variant={
+                          selectedPluginName === pluginName ? "default" : "outline"
+                        }
+                        onClick={() => setSelectedPluginName(pluginName)}
+                      >
+                        {pluginName}
+                      </Button>
+                    ))}
+                  </div>
+                </div>
+                <Button
+                  type="button"
+                  size="xs"
+                  variant="ghost"
+                  onClick={() => {
+                    setSelectedPluginName("all");
+                    setPage(1);
+                  }}
+                >
+                  Clear Filters
+                </Button>
+              </div>
+            )}
           </div>
         </CardHeader>
       </Card>

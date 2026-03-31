@@ -1,4 +1,4 @@
-import { getSyncsCount, getSyncs } from "../services/syncService.js";
+import { getSyncById, getSyncsCount, getSyncs } from "../services/syncService.js";
 export const getSyncsCountController = async (req, res) => {
     try {
         const filters = {
@@ -28,5 +28,16 @@ export const getSyncsController = async (req, res) => {
     catch (err) {
         console.error("Error getting syncs:", err);
         res.status(500).json({ error: "Error getting syncs" });
+    }
+};
+export const getSyncByIdController = async (req, res) => {
+    try {
+        const syncId = Array.isArray(req.params.id) ? req.params.id[0] : req.params.id;
+        const sync = await getSyncById(syncId);
+        res.json(sync);
+    }
+    catch (err) {
+        console.error("Error getting sync by id:", err);
+        res.status(404).json({ error: "Sync not found" });
     }
 };

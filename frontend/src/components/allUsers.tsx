@@ -31,6 +31,32 @@ type SyncTimelineItem = {
   gapMinutesFromPrevious: number | null;
 };
 
+function compareVersionStrings(left: string, right: string): number {
+  const leftParts = left.split(/[^0-9A-Za-z]+/).filter(Boolean);
+  const rightParts = right.split(/[^0-9A-Za-z]+/).filter(Boolean);
+  const maxLength = Math.max(leftParts.length, rightParts.length);
+
+  for (let index = 0; index < maxLength; index += 1) {
+    const leftPart = leftParts[index] ?? "";
+    const rightPart = rightParts[index] ?? "";
+
+    const leftNumber = Number(leftPart);
+    const rightNumber = Number(rightPart);
+    const leftIsNumber = leftPart !== "" && Number.isFinite(leftNumber);
+    const rightIsNumber = rightPart !== "" && Number.isFinite(rightNumber);
+
+    if (leftIsNumber && rightIsNumber && leftNumber !== rightNumber) {
+      return leftNumber - rightNumber;
+    }
+
+    if (leftPart !== rightPart) {
+      return leftPart.localeCompare(rightPart, undefined, { numeric: true });
+    }
+  }
+
+  return left.localeCompare(right, undefined, { numeric: true });
+}
+
 function isCrashSession(item: SessionListItem | null): boolean {
   if (!item) return false;
   const raw = item.crashStatus;
@@ -233,13 +259,34 @@ function UserSummaryCard({
     : "-";
   const pluginBadges =
     item.pluginVersionDetails && item.pluginVersionDetails.length > 0
-      ? item.pluginVersionDetails.map((detail) => ({
-          key: `${detail.pluginVersion}-${detail.revitVersions.join("|")}`,
-          label:
-            detail.revitVersions.length > 0
-              ? `v${detail.pluginVersion} • Revit ${detail.revitVersions.join(", ")}`
-              : `v${detail.pluginVersion}`,
-        }))
+      ? Array.from(
+          item.pluginVersionDetails.reduce(
+            (latestByRevit, detail) => {
+              for (const revitVersion of detail.revitVersions) {
+                const current = latestByRevit.get(revitVersion);
+                if (
+                  !current ||
+                  compareVersionStrings(detail.pluginVersion, current) > 0
+                ) {
+                  latestByRevit.set(revitVersion, detail.pluginVersion);
+                }
+              }
+              return latestByRevit;
+            },
+            new Map<string, string>(),
+          ),
+        )
+          .sort(([leftRevit, leftPlugin], [rightRevit, rightPlugin]) => {
+            const revitComparison = compareVersionStrings(leftRevit, rightRevit);
+            if (revitComparison !== 0) {
+              return revitComparison;
+            }
+            return compareVersionStrings(leftPlugin, rightPlugin);
+          })
+          .map(([revitVersion, pluginVersion]) => ({
+            key: `${revitVersion}-${pluginVersion}`,
+            label: `v${pluginVersion} • Revit ${revitVersion}`,
+          }))
       : item.pluginVersions.map((pluginVersion) => ({
           key: pluginVersion,
           label: `v${pluginVersion}`,

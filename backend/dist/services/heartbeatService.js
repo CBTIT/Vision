@@ -2,6 +2,8 @@ import RevitHeartbeat from "../models/RevitHeartbeat.js";
 import RevitSession from "../models/RevitSession.js";
 import UserMappings from "../models/UserMappings.js";
 import { getTimeCutoff } from "../utilities/timeUtils.js";
+const ACTIVE_HEARTBEAT_SECONDS = 90;
+const HEARTBEAT_RETENTION_SECONDS = 180;
 function escapeRegex(value) {
     return value.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
 }
@@ -33,8 +35,15 @@ async function getLatestSessionUsername(machine, activeDocId) {
         ? session.autodeskUserName.trim()
         : "";
 }
+async function cleanupStaleHeartbeats() {
+    const retentionCutoff = getTimeCutoff(HEARTBEAT_RETENTION_SECONDS);
+    await RevitHeartbeat.deleteMany({
+        ts: { $lt: retentionCutoff },
+    });
+}
 export const getActiveUsers = async () => {
-    const cutoff = getTimeCutoff(90);
+    await cleanupStaleHeartbeats();
+    const cutoff = getTimeCutoff(ACTIVE_HEARTBEAT_SECONDS);
     const active = await RevitHeartbeat.find({
         ts: { $gt: cutoff },
         openDocs: { $ne: [] },
@@ -66,7 +75,8 @@ export const getActiveUsers = async () => {
     });
 };
 export const getActiveUsersCount = async () => {
-    const cutoff = getTimeCutoff(90);
+    await cleanupStaleHeartbeats();
+    const cutoff = getTimeCutoff(ACTIVE_HEARTBEAT_SECONDS);
     const activeCount = await RevitHeartbeat.countDocuments({
         ts: { $gte: cutoff },
         openDocs: { $ne: [] },

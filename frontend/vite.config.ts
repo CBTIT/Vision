@@ -12,4 +12,33 @@ export default defineConfig({
       "@": path.resolve(__dirname, "./src"),
     },
   },
+  build: {
+    rollupOptions: {
+      output: {
+        manualChunks(id) {
+          if (!id.includes("node_modules")) {
+            return undefined;
+          }
+
+          if (id.includes("recharts")) {
+            return "charts";
+          }
+
+          if (id.includes("date-fns")) {
+            return "date-utils";
+          }
+
+          if (id.includes("lucide-react")) {
+            return "icons";
+          }
+
+          if (id.includes("@radix-ui")) {
+            return "radix-ui";
+          }
+
+          return "vendor";
+        },
+      },
+    },
+  },
 });

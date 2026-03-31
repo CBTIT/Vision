@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useMemo, useState } from "react";
 import { format } from "date-fns";
 import { ChevronLeft, ChevronRight } from "lucide-react";
+import { useLocation, useNavigate } from "react-router-dom";
 
 import { useHeaderRight } from "./header-context";
 import { DateRangeFilter } from "./date-range-filter";
@@ -8,7 +9,9 @@ import { useDateRange } from "./date-range-context";
 import { useAutoRefresh } from "@/hooks/use-auto-refresh";
 import { RefreshButton } from "@/components/refresh-button";
 import {
+  fetchSessionById,
   fetchSessionsList,
+  fetchSyncById,
   fetchSyncsList,
   type PaginatedListResponse,
   type SessionListItem,
@@ -200,9 +203,11 @@ function TimeWithDate({ value }: { value: { time: string; date: string } }) {
 function SyncTimeline({
   timeline,
   compact = false,
+  onSyncClick,
 }: {
   timeline: SyncTimelineItem[];
   compact?: boolean;
+  onSyncClick?: (syncId: string) => void;
 }) {
   if (timeline.length === 0) {
     return (
@@ -221,18 +226,38 @@ function SyncTimeline({
             <span className="absolute left-3.25 top-5 h-[calc(100%-0.2rem)] w-px bg-border" />
           )}
 
-          <div className="rounded-md border bg-muted/10 px-3 py-2">
-            <p
-              className={
-                compact ? "text-xs font-semibold" : "text-sm font-semibold"
-              }
+          {onSyncClick ? (
+            <button
+              type="button"
+              onClick={() => onSyncClick(sync.syncId)}
+              title="Go to Sync Details"
+              className="block w-full rounded-md border bg-muted/10 px-3 py-2 text-left transition-colors hover:border-violet-300 hover:bg-violet-50/60 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-violet-400/60 dark:hover:border-violet-700 dark:hover:bg-violet-950/40"
             >
-              Sync {index + 1}
-            </p>
-            <p className="text-xs text-muted-foreground mt-0.5">
-              {formatDateTime(sync.time)}
-            </p>
-          </div>
+              <p
+                className={
+                  compact ? "text-xs font-semibold" : "text-sm font-semibold"
+                }
+              >
+                Sync {index + 1}
+              </p>
+              <p className="mt-0.5 text-xs text-muted-foreground">
+                {formatDateTime(sync.time)}
+              </p>
+            </button>
+          ) : (
+            <div className="rounded-md border bg-muted/10 px-3 py-2">
+              <p
+                className={
+                  compact ? "text-xs font-semibold" : "text-sm font-semibold"
+                }
+              >
+                Sync {index + 1}
+              </p>
+              <p className="mt-0.5 text-xs text-muted-foreground">
+                {formatDateTime(sync.time)}
+              </p>
+            </div>
+          )}
 
           {index < timeline.length - 1 && (
             <div className="ml-1 mt-1.5 mb-0.5">
@@ -373,7 +398,7 @@ function SyncCard({
           <div>
             <p className="text-xs text-muted-foreground">Project</p>
             <p className="font-medium truncate">
-              {item.projectId || "Unknown project"}
+              {item.cloudProjectName || item.projectId || "Unknown project"}
             </p>
           </div>
           <div>
@@ -408,6 +433,8 @@ function SyncCard({
 export default function SessionsSyncsPage({ mode }: { mode: Mode }) {
   const title = mode === "sessions" ? "Sessions" : "Syncs";
   const setHeaderRight = useHeaderRight();
+  const navigate = useNavigate();
+  const location = useLocation();
   const { from, to } = useDateRange();
   const { refreshKey, refresh } = useAutoRefresh();
 
@@ -468,17 +495,6 @@ export default function SessionsSyncsPage({ mode }: { mode: Mode }) {
     const timeline = (selectedItem as SessionListItem).syncTimeline;
     return Array.isArray(timeline) ? timeline : [];
   }, [mode, selectedItem]);
-
-  const displayFields = useMemo(() => {
-    if (!selectedItem) return [] as Array<{ label: string; value: string }>;
-    const hidden = new Set(["__v", "syncTimeline", "syncDatabaseIds"]);
-    return Object.entries(selectedItem)
-      .filter(([key]) => !hidden.has(key))
-      .map(([key, value]) => ({
-        label: toTitle(key),
-        value: formatFieldValue(key, value),
-      }));
-  }, [selectedItem]);
 
   const sessionPrimaryFields = useMemo(() => {
     if (mode !== "sessions" || !selectedItem) {
@@ -679,6 +695,90 @@ export default function SessionsSyncsPage({ mode }: { mode: Mode }) {
       }));
   }, [mode, selectedItem]);
 
+  const syncPrimaryFields = useMemo(() => {
+    if (mode !== "syncs" || !selectedItem) {
+      return {
+        projectName: "-",
+        fileName: "-",
+      };
+    }
+
+    const sync = selectedItem as SyncListItem;
+    return {
+      projectName:
+        (typeof sync.cloudProjectName === "string" && sync.cloudProjectName) ||
+        (typeof sync.projectId === "string" && sync.projectId) ||
+        "-",
+      fileName:
+        (typeof sync.fileName === "string" && sync.fileName) ||
+        (typeof sync.modelId === "string" && sync.modelId) ||
+        "-",
+    };
+  }, [mode, selectedItem]);
+
+  const syncTimeFields = useMemo(() => {
+    if (mode !== "syncs" || !selectedItem) {
+      return {
+        syncStartTime: { time: "-", date: "" },
+        syncEndTime: { time: "-", date: "" },
+        syncReadyTime: { time: "-", date: "" },
+        gap: "-",
+        duration: "-",
+        totalDuration: "-",
+      };
+    }
+
+    const sync = selectedItem as SyncListItem;
+    return {
+      syncStartTime: formatTimeAndDateParts("syncStartTime", sync.syncStartTime),
+      syncEndTime: formatTimeAndDateParts("syncEndTime", sync.syncEndTime),
+      syncReadyTime: formatTimeAndDateParts("syncReadyTime", sync.syncReadyTime),
+      gap: formatSecondsSuffix(sync.gap),
+      duration: formatSecondsSuffix(sync.duration),
+      totalDuration: formatSecondsSuffix(sync.totalDuration),
+    };
+  }, [mode, selectedItem]);
+
+  const syncRemainingFields = useMemo(() => {
+    if (mode !== "syncs" || !selectedItem) {
+      return [] as Array<{ label: string; value: string }>;
+    }
+
+    const hidden = new Set([
+      "_id",
+      "fullName",
+      "autodeskUserName",
+      "projectId",
+      "cloudProjectName",
+      "fileName",
+      "modelId",
+      "filePath",
+      "date",
+      "syncStartTime",
+      "syncEndTime",
+      "syncReadyTime",
+      "gap",
+      "duration",
+      "totalDuration",
+      "revitSessionId",
+    ]);
+
+    return Object.entries(selectedItem)
+      .filter(([key]) => !hidden.has(key))
+      .map(([key, value]) => ({
+        label: toTitle(key),
+        value: formatFieldValue(key, value),
+      }));
+  }, [mode, selectedItem]);
+
+  const selectedSyncSessionId = useMemo(() => {
+    if (mode !== "syncs" || !selectedItem) {
+      return "";
+    }
+
+    return (selectedItem as SyncListItem).revitSessionId?.trim() ?? "";
+  }, [mode, selectedItem]);
+
   useEffect(() => {
     setLoading(true);
 
@@ -698,6 +798,44 @@ export default function SessionsSyncsPage({ mode }: { mode: Mode }) {
       )
       .finally(() => setLoading(false));
   }, [mode, fromStr, toStr, page, limit, refreshKey]);
+
+  useEffect(() => {
+    const state = location.state as { openSessionId?: string } | null;
+    const openSessionId =
+      typeof state?.openSessionId === "string" ? state.openSessionId : "";
+
+    if (mode !== "sessions" || !openSessionId) {
+      return;
+    }
+
+    fetchSessionById(openSessionId)
+      .then((session) => {
+        setSelectedItem(session);
+        setDetailsOpen(true);
+      })
+      .finally(() => {
+        navigate(location.pathname, { replace: true, state: null });
+      });
+  }, [mode, location.pathname, location.state, navigate]);
+
+  useEffect(() => {
+    const state = location.state as { openSyncId?: string } | null;
+    const openSyncId =
+      typeof state?.openSyncId === "string" ? state.openSyncId : "";
+
+    if (mode !== "syncs" || !openSyncId) {
+      return;
+    }
+
+    fetchSyncById(openSyncId)
+      .then((sync) => {
+        setSelectedItem(sync);
+        setDetailsOpen(true);
+      })
+      .finally(() => {
+        navigate(location.pathname, { replace: true, state: null });
+      });
+  }, [mode, location.pathname, location.state, navigate]);
 
   const subtitle = useMemo(() => {
     const fromLabel = format(from, "dd MMM yyyy");
@@ -971,7 +1109,14 @@ export default function SessionsSyncsPage({ mode }: { mode: Mode }) {
 
                 <div className="rounded-lg border p-3">
                   <p className="text-xs text-muted-foreground mb-2">Syncs</p>
-                  <SyncTimeline timeline={selectedSessionTimeline} />
+                  <SyncTimeline
+                    timeline={selectedSessionTimeline}
+                    onSyncClick={(syncId) =>
+                      navigate("/syncs", {
+                        state: { openSyncId: syncId },
+                      })
+                    }
+                  />
                 </div>
 
                 <div className="rounded-lg border p-3">
@@ -1014,12 +1159,96 @@ export default function SessionsSyncsPage({ mode }: { mode: Mode }) {
                 ))}
               </>
             ) : (
-              displayFields.map((field) => (
-                <div key={field.label} className="rounded-lg border p-3">
-                  <p className="text-xs text-muted-foreground">{field.label}</p>
-                  <p className="mt-1 text-sm wrap-break-word">{field.value}</p>
+              <>
+                <div className="rounded-xl border-2 border-violet-200/70 bg-violet-50/40 p-4 space-y-3 dark:border-violet-800/60 dark:bg-violet-950/30">
+                  <p className="text-xs font-semibold tracking-wide text-violet-700 uppercase dark:text-violet-400">
+                    Project Details
+                  </p>
+                  <div>
+                    <p className="text-xs text-muted-foreground">Project Name</p>
+                    <p className="mt-1 text-sm font-medium wrap-break-word">
+                      {syncPrimaryFields.projectName}
+                    </p>
+                  </div>
+                  <div>
+                    <p className="text-xs text-muted-foreground">File Name</p>
+                    <p className="mt-1 text-sm font-medium wrap-break-word">
+                      {syncPrimaryFields.fileName}
+                    </p>
+                  </div>
                 </div>
-              ))
+
+                <div className="rounded-lg border p-3">
+                  <p className="text-xs text-muted-foreground mb-2 uppercase tracking-wide">
+                    Time Metrics
+                  </p>
+                  <div className="grid grid-cols-1 gap-3 sm:grid-cols-3">
+                    <div>
+                      <p className="text-xs text-muted-foreground">
+                        Start Time
+                      </p>
+                      <TimeWithDate value={syncTimeFields.syncStartTime} />
+                    </div>
+                    <div>
+                      <p className="text-xs text-muted-foreground">End Time</p>
+                      <TimeWithDate value={syncTimeFields.syncEndTime} />
+                    </div>
+                    <div>
+                      <p className="text-xs text-muted-foreground">
+                        Ready Time
+                      </p>
+                      <TimeWithDate value={syncTimeFields.syncReadyTime} />
+                    </div>
+                  </div>
+
+                  <div className="mt-3 grid grid-cols-1 gap-3 sm:grid-cols-3">
+                    <div>
+                      <p className="text-xs text-muted-foreground">Gap</p>
+                      <p className="mt-1 text-sm font-medium wrap-break-word">
+                        {syncTimeFields.gap}
+                      </p>
+                    </div>
+                    <div>
+                      <p className="text-xs text-muted-foreground">Duration</p>
+                      <p className="mt-1 text-sm font-medium wrap-break-word">
+                        {syncTimeFields.duration}
+                      </p>
+                    </div>
+                    <div>
+                      <p className="text-xs text-muted-foreground">
+                        Total Duration
+                      </p>
+                      <p className="mt-1 text-sm font-medium wrap-break-word">
+                        {syncTimeFields.totalDuration}
+                      </p>
+                    </div>
+                  </div>
+                </div>
+
+                {selectedSyncSessionId && (
+                  <div className="rounded-lg border p-3">
+                    <Button
+                      type="button"
+                      onClick={() =>
+                        navigate("/sessions", {
+                          state: {
+                            openSessionId: selectedSyncSessionId,
+                          },
+                        })
+                      }
+                    >
+                      Go to Session
+                    </Button>
+                  </div>
+                )}
+
+                {syncRemainingFields.map((field) => (
+                  <div key={field.label} className="rounded-lg border p-3">
+                    <p className="text-xs text-muted-foreground">{field.label}</p>
+                    <p className="mt-1 text-sm wrap-break-word">{field.value}</p>
+                  </div>
+                ))}
+              </>
             )}
           </div>
         </SheetContent>

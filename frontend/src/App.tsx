@@ -1,25 +1,31 @@
+import { Suspense, lazy } from "react";
 import { Route, Routes, Navigate } from "react-router-dom";
 import Layout from "./components/layout";
-import Overview from "./components/overview";
-import AllUsers from "./components/allUsers";
-import CloudData from "./components/cloudData";
-import Plugins from "./components/plugins";
-import AllModels from "./components/alModels";
-import ActiveUsers from "./components/activeUsers";
-import SessionsSyncsPage from "./components/sessions-syncs";
-import Login from "./components/login";
 import { useAuth } from "./contexts/AuthContext";
 import { Skeleton } from "./components/ui/skeleton";
+
+const Overview = lazy(() => import("./components/overview"));
+const AllUsers = lazy(() => import("./components/allUsers"));
+const CloudData = lazy(() => import("./components/cloudData"));
+const Plugins = lazy(() => import("./components/plugins"));
+const AllModels = lazy(() => import("./components/alModels"));
+const ActiveUsers = lazy(() => import("./components/activeUsers"));
+const SessionsSyncsPage = lazy(() => import("./components/sessions-syncs"));
+const Login = lazy(() => import("./components/login"));
+
+function PageLoader() {
+  return (
+    <div className="flex min-h-screen items-center justify-center">
+      <Skeleton className="h-64 w-64" />
+    </div>
+  );
+}
 
 function ProtectedLayout() {
   const { isAuthenticated, isLoading } = useAuth();
 
   if (isLoading) {
-    return (
-      <div className="flex items-center justify-center min-h-screen">
-        <Skeleton className="h-64 w-64" />
-      </div>
-    );
+    return <PageLoader />;
   }
 
   if (!isAuthenticated) {
@@ -41,22 +47,24 @@ function LoginRoute() {
 
 function App() {
   return (
-    <Routes>
-      <Route path="/login" element={<LoginRoute />} />
-      <Route path="/" element={<ProtectedLayout />}>
-        <Route index element={<Overview />} />
-        <Route path="users" element={<AllUsers />} />
-        <Route path="active-users" element={<ActiveUsers />} />
-        <Route path="models" element={<AllModels />} />
-        <Route path="plugins" element={<Plugins />} />
-        <Route path="cloud-data" element={<CloudData />} />
-        <Route
-          path="sessions"
-          element={<SessionsSyncsPage mode="sessions" />}
-        />
-        <Route path="syncs" element={<SessionsSyncsPage mode="syncs" />} />
-      </Route>
-    </Routes>
+    <Suspense fallback={<PageLoader />}>
+      <Routes>
+        <Route path="/login" element={<LoginRoute />} />
+        <Route path="/" element={<ProtectedLayout />}>
+          <Route index element={<Overview />} />
+          <Route path="users" element={<AllUsers />} />
+          <Route path="active-users" element={<ActiveUsers />} />
+          <Route path="models" element={<AllModels />} />
+          <Route path="plugins" element={<Plugins />} />
+          <Route path="cloud-data" element={<CloudData />} />
+          <Route
+            path="sessions"
+            element={<SessionsSyncsPage mode="sessions" />}
+          />
+          <Route path="syncs" element={<SessionsSyncsPage mode="syncs" />} />
+        </Route>
+      </Routes>
+    </Suspense>
   );
 }
 

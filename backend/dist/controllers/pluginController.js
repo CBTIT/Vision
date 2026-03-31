@@ -1,4 +1,4 @@
-import { getPluginUseCount, getPluginUseList, } from "../services/pluginService.js";
+import { getPluginUseCount, getPluginNames, getPluginUseList, } from "../services/pluginService.js";
 export const getPluginUseCountController = async (_req, res) => {
     try {
         const pluginUseCount = await getPluginUseCount();
@@ -14,6 +14,7 @@ export const getPluginUseListController = async (req, res) => {
         const filters = {
             limit: Number(req.query.limit) || undefined,
             page: Number(req.query.page) || undefined,
+            pluginName: typeof req.query.pluginName === "string" ? req.query.pluginName : undefined,
         };
         const pluginUseList = await getPluginUseList(filters);
         return res.json(pluginUseList);
@@ -21,5 +22,15 @@ export const getPluginUseListController = async (req, res) => {
     catch (err) {
         console.error("Error getting plugin use list:", err);
         return res.status(500).json({ error: "Failed to get plugin use list" });
+    }
+};
+export const getPluginNamesController = async (_req, res) => {
+    try {
+        const pluginNames = await getPluginNames();
+        return res.json({ items: pluginNames });
+    }
+    catch (err) {
+        console.error("Error getting plugin names:", err);
+        return res.status(500).json({ error: "Failed to get plugin names" });
     }
 };
