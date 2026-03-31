@@ -91,14 +91,36 @@ export type ActiveUserItem = {
 async function apiFetch<T>(
   path: string,
   params?: Record<string, string>,
+  options?: {
+    timeoutMs?: number;
+  },
 ): Promise<T> {
   const url = new URL(`${BASE_URL}${path}`);
   if (params) {
     Object.entries(params).forEach(([k, v]) => url.searchParams.set(k, v));
   }
-  const res = await fetch(url.toString(), {
-    credentials: "include",
-  });
+  const controller = new AbortController();
+  const timeoutMs = options?.timeoutMs;
+  const timeoutId =
+    timeoutMs === undefined
+      ? undefined
+      : window.setTimeout(() => controller.abort(), timeoutMs);
+  let res: Response;
+  try {
+    res = await fetch(url.toString(), {
+      credentials: "include",
+      signal: controller.signal,
+    });
+  } catch (error) {
+    if (error instanceof DOMException && error.name === "AbortError") {
+      throw new Error(`Request timed out: ${path}`);
+    }
+    throw error;
+  } finally {
+    if (timeoutId !== undefined) {
+      window.clearTimeout(timeoutId);
+    }
+  }
   if (!res.ok) throw new Error(`API error ${res.status}: ${path}`);
   return res.json() as Promise<T>;
 }
@@ -179,7 +201,7 @@ async function apiPut<T>(
 }
 
 export async function getMe(): Promise<User> {
-  return apiFetch<User>("/api/auth/me");
+  return apiFetch<User>("/api/auth/me", undefined, { timeoutMs: 6000 });
 }
 
 export async function fetchSessionsCount(

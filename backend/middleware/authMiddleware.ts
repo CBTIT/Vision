@@ -4,6 +4,8 @@ import jwt from "jsonwebtoken";
 export interface AuthRequest extends Request {
   userId?: string;
   email?: string;
+  fullName?: string;
+  profileIcon?: string;
 }
 
 export const authMiddleware = (
@@ -22,6 +24,10 @@ export const authMiddleware = (
     if (typeof decoded === "object") {
       req.userId = decoded.userId;
       req.email = decoded.email;
+      req.fullName =
+        typeof decoded.fullName === "string" ? decoded.fullName : undefined;
+      req.profileIcon =
+        typeof decoded.profileIcon === "string" ? decoded.profileIcon : undefined;
     }
     next();
   } catch (err) {

@@ -27,7 +27,12 @@ export const loginService = async (email, password) => {
     if (!passwordMatch) {
         throw new Error("Invalid password");
     }
-    const token = jwt.sign({ userId: user._id.toString(), email: user.email }, process.env.JWT_SECRET, { expiresIn: "14d" });
+    const token = jwt.sign({
+        userId: user._id.toString(),
+        email: user.email,
+        fullName: user.fullName || undefined,
+        profileIcon: user.profileIcon || "user",
+    }, process.env.JWT_SECRET, { expiresIn: "14d" });
     return {
         token,
         user: {

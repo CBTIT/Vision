@@ -6,6 +6,7 @@ interface AuthContextType {
   user: User | null;
   isLoading: boolean;
   isAuthenticated: boolean;
+  authError: string | null;
   setUser: React.Dispatch<React.SetStateAction<User | null>>;
 }
 
@@ -16,6 +17,7 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({
 }) => {
   const [user, setUser] = useState<User | null>(null);
   const [isLoading, setIsLoading] = useState(true);
+  const [authError, setAuthError] = useState<string | null>(null);
 
   useEffect(() => {
     // Check if user is already logged in
@@ -25,9 +27,17 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({
         const userData = await getMe();
         console.log("✅ User authenticated:", userData);
         setUser(userData);
+        setAuthError(null);
       } catch (error) {
         console.log("❌ Not authenticated:", error);
         setUser(null);
+        if (error instanceof Error && error.message.includes("timed out")) {
+          setAuthError(
+            "The server took too long to respond. You can still sign in once it wakes up.",
+          );
+        } else {
+          setAuthError(null);
+        }
       } finally {
         console.log("✨ Auth check complete, hiding loader");
         setIsLoading(false);
@@ -41,6 +51,7 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({
     user,
     isLoading,
     isAuthenticated: !!user,
+    authError,
     setUser,
   };
 

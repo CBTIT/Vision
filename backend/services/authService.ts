@@ -25,6 +25,8 @@ type ProfileIcon = (typeof VALID_PROFILE_ICONS)[number];
 export interface AuthPayload {
   userId: string;
   email: string;
+  fullName?: string;
+  profileIcon?: string;
 }
 
 export const loginService = async (
@@ -51,7 +53,12 @@ export const loginService = async (
   }
 
   const token = jwt.sign(
-    { userId: user._id.toString(), email: user.email },
+    {
+      userId: user._id.toString(),
+      email: user.email,
+      fullName: user.fullName || undefined,
+      profileIcon: user.profileIcon || "user",
+    },
     process.env.JWT_SECRET!,
     { expiresIn: "14d" },
   );

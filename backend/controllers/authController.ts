@@ -88,6 +88,15 @@ export const getMeController = async (req: AuthRequest, res: Response) => {
       return res.status(401).json({ error: "Not authenticated" });
     }
 
+    if (req.email) {
+      return res.json({
+        email: req.email,
+        userId: req.userId,
+        fullName: req.fullName,
+        profileIcon: req.profileIcon || "user",
+      });
+    }
+
     const user = await getUserService(req.userId);
     return res.json(user);
   } catch (err: unknown) {

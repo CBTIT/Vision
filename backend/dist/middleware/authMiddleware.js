@@ -9,6 +9,10 @@ export const authMiddleware = (req, res, next) => {
         if (typeof decoded === "object") {
             req.userId = decoded.userId;
             req.email = decoded.email;
+            req.fullName =
+                typeof decoded.fullName === "string" ? decoded.fullName : undefined;
+            req.profileIcon =
+                typeof decoded.profileIcon === "string" ? decoded.profileIcon : undefined;
         }
         next();
     }

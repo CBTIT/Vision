@@ -13,12 +13,11 @@ export default function Login() {
   const [showPassword, setShowPassword] = useState(false);
   const [error, setError] = useState("");
   const [isLoading, setIsLoading] = useState(false);
-  const [showWelcome, setShowWelcome] = useState(false);
   const networkCanvasRef = useRef<HTMLCanvasElement | null>(null);
   const navigate = useNavigate();
-  const { setUser } = useAuth();
+  const { setUser, authError } = useAuth();
 
-  const isOverlayVisible = isLoading || showWelcome;
+  const isOverlayVisible = isLoading;
 
   useEffect(() => {
     if (!isOverlayVisible) {
@@ -160,12 +159,7 @@ export default function Login() {
     try {
       const result = await login(email, password);
       setUser(result.user);
-      setShowWelcome(true);
-
-      // Show welcome message for 1.5 seconds then navigate
-      setTimeout(() => {
-        navigate("/");
-      }, 1500);
+      navigate("/");
     } catch (err) {
       const error = err as Error;
       setError(error.message || "Login failed");
@@ -185,12 +179,10 @@ export default function Login() {
           <div className="absolute inset-0 login-network-vignette" />
           <div className="relative text-center px-6 py-7 rounded-2xl login-loading-panel">
             <h2 className="text-3xl sm:text-4xl font-black tracking-tight text-white drop-shadow-md">
-              {showWelcome ? "Welcome!" : "Connecting to Backend"}
+              Connecting to Backend
             </h2>
             <p className="mt-3 text-sm sm:text-base font-semibold text-white/90">
-              {showWelcome
-                ? "Getting your dashboard ready..."
-                : "Please wait while we prepare your workspace..."}
+              Please wait while we prepare your workspace...
             </p>
             <div className="mt-5 flex items-center justify-center gap-2">
               <span className="h-2.5 w-2.5 rounded-full bg-white login-loading-dot login-loading-dot-1" />
@@ -210,9 +202,11 @@ export default function Login() {
         {/* Main Card */}
         <Card className="p-6 border">
           {/* Error Alert */}
-          {error && (
+          {(error || authError) && (
             <div className="mb-6 p-4 bg-destructive/10 border border-destructive/20 rounded-lg">
-              <p className="text-sm font-medium text-destructive">{error}</p>
+              <p className="text-sm font-medium text-destructive">
+                {error || authError}
+              </p>
             </div>
           )}
 

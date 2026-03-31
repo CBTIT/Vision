@@ -29,20 +29,20 @@ function ProtectedLayout() {
   return <Layout />;
 }
 
-function App() {
-  const { isLoading } = useAuth();
+function LoginRoute() {
+  const { isAuthenticated } = useAuth();
 
-  if (isLoading) {
-    return (
-      <div className="flex items-center justify-center min-h-screen">
-        <Skeleton className="h-64 w-64" />
-      </div>
-    );
+  if (isAuthenticated) {
+    return <Navigate to="/" replace />;
   }
 
+  return <Login />;
+}
+
+function App() {
   return (
     <Routes>
-      <Route path="/login" element={<Login />} />
+      <Route path="/login" element={<LoginRoute />} />
       <Route path="/" element={<ProtectedLayout />}>
         <Route index element={<Overview />} />
         <Route path="users" element={<AllUsers />} />
