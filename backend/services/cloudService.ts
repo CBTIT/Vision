@@ -32,6 +32,8 @@ type ProjectApi = {
     products?: unknown;
     platform?: string;
     type?: string;
+    /** Present on some ACC project payloads; used for BIM vs Forma-style classification. */
+    constructionType?: string;
     extension?: {
       type?: string;
       data?: Record<string, unknown>;
@@ -279,9 +281,10 @@ function normalizeCompanyPageBody(json: unknown): {
 async function fetchPartnerCompaniesPageChain(
   token: string,
   firstPath: string,
-):
+): Promise<
   | { kind: "ok"; rows: unknown[] }
-  | { kind: "unreachable"; status: number } {
+  | { kind: "unreachable"; status: number }
+> {
   const rows: unknown[] = [];
   let nextPath: string | null = firstPath;
 
@@ -872,6 +875,14 @@ function normalizeNextContentsPath(href: string): string {
   return t.startsWith("/") ? t : `/${t}`;
 }
 
+/** Isolated fetch avoids TS circular inference on `nextPath` in pagination loops. */
+function fetchFolderContentsPage(
+  token: string,
+  path: string,
+): Promise<ApiListResponse<FolderContentsApi> | null> {
+  return apsGetOptional<ApiListResponse<FolderContentsApi>>(token, path);
+}
+
 async function fetchFolderContentsAllPages(
   token: string,
   projectId: string,
@@ -882,14 +893,11 @@ async function fetchFolderContentsAllPages(
     `/data/v1/projects/${encodeURIComponent(projectId)}/folders/${encodeURIComponent(folderId)}/contents?page[limit]=200`;
 
   while (nextPath) {
-    const page = await apsGetOptional<ApiListResponse<FolderContentsApi>>(
-      token,
-      nextPath,
-    );
-    if (!page?.data?.length) break;
-    out.push(...page.data);
-    const nextHref = page.links?.next?.href?.trim();
-    nextPath = nextHref ? normalizeNextContentsPath(nextHref) : null;
+    const batch = await fetchFolderContentsPage(token, nextPath);
+    if (!batch?.data?.length) break;
+    out.push(...batch.data);
+    const href: string | undefined = batch.links?.next?.href?.trim();
+    nextPath = href ? normalizeNextContentsPath(href) : null;
   }
 
   return out;

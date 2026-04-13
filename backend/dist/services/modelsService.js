@@ -162,60 +162,78 @@ export const getModelSizeHistory = async (modelId, from, to) => {
         maxFileSize: row.maxFileSize,
     }));
 };
-/** Resolved project bucket: cloud project name when present, else trimmed project id. */
-const projectKeyExpr = {
-    $let: {
-        vars: {
-            c: { $trim: { input: { $ifNull: ["$cloudProjectName", ""] } } },
-            p: { $trim: { input: { $ifNull: ["$projectId", ""] } } },
-        },
-        in: {
-            $cond: [{ $gt: [{ $strLenCP: "$$c" }, 0] }, "$$c", "$$p"],
-        },
-    },
-};
-function buildSessionDateMatch(from, to) {
-    if (!from && !to)
-        return {};
-    const dateFilter = {};
-    if (from)
-        dateFilter["$gte"] = new Date(from);
-    if (to) {
-        const toDate = new Date(to);
-        toDate.setHours(23, 59, 59, 999);
-        dateFilter["$lte"] = toDate;
-    }
-    return { dateTime: dateFilter };
-}
 /**
- * Per-project totals (sum of session warningCount) and daily sums for charting,
- * scoped to the same date range as other Vision lists.
+ * Per-model last recorded warning count (from latest session in range) and
+ * daily maxima for the combined chart — same session scope as All Models.
  */
-export const getProjectWarningsData = async (from, to) => {
-    const dateMatch = buildSessionDateMatch(from, to);
-    const baseStages = [
-        ...(Object.keys(dateMatch).length ? [{ $match: dateMatch }] : []),
-        { $addFields: { projectKey: projectKeyExpr } },
-        {
-            $match: {
-                projectKey: { $ne: "" },
+export const getModelWarningsData = async (from, to) => {
+    const matchStage = {
+        $or: [
+            { modelId: { $exists: true, $ne: "" } },
+            { fileName: { $exists: true, $ne: "" } },
+        ],
+    };
+    if (from || to) {
+        const dateFilter = {};
+        if (from)
+            dateFilter["$gte"] = new Date(from);
+        if (to) {
+            const toDate = new Date(to);
+            toDate.setHours(23, 59, 59, 999);
+            dateFilter["$lte"] = toDate;
+        }
+        matchStage["dateTime"] = dateFilter;
+    }
+    const modelKeyExpr = {
+        $cond: [
+            {
+                $and: [{ $ifNull: ["$modelId", false] }, { $ne: ["$modelId", ""] }],
             },
-        },
-    ];
+            "$modelId",
+            "$fileName",
+        ],
+    };
+    const baseStages = [{ $match: matchStage }];
     const [summaryRows, dailyRows] = await Promise.all([
         RevitSession.aggregate([
             ...baseStages,
+            { $sort: { dateTime: 1 } },
             {
                 $group: {
-                    _id: "$projectKey",
-                    totalWarnings: { $sum: { $ifNull: ["$warningCount", 0] } },
+                    _id: modelKeyExpr,
+                    fileName: { $last: "$fileName" },
+                    projectName: {
+                        $last: {
+                            $cond: [
+                                {
+                                    $and: [
+                                        { $ifNull: ["$cloudProjectName", false] },
+                                        { $ne: ["$cloudProjectName", ""] },
+                                    ],
+                                },
+                                "$cloudProjectName",
+                                "$projectId",
+                            ],
+                        },
+                    },
+                    lastWarningCount: { $last: { $ifNull: ["$warningCount", 0] } },
                     sessionCount: { $sum: 1 },
                 },
             },
-            { $sort: { totalWarnings: -1, _id: 1 } },
+            { $sort: { lastWarningCount: -1, _id: 1 } },
         ]),
         RevitSession.aggregate([
             ...baseStages,
+            {
+                $addFields: {
+                    modelKey: modelKeyExpr,
+                },
+            },
+            {
+                $match: {
+                    modelKey: { $ne: "" },
+                },
+            },
             {
                 $group: {
                     _id: {
@@ -226,30 +244,91 @@ export const getProjectWarningsData = async (from, to) => {
                                 timezone: "UTC",
                             },
                         },
-                        projectKey: "$projectKey",
+                        modelKey: "$modelKey",
                     },
-                    totalWarnings: { $sum: { $ifNull: ["$warningCount", 0] } },
+                    warningCount: {
+                        $max: { $ifNull: ["$warningCount", 0] },
+                    },
                 },
             },
-            { $sort: { "_id.date": 1, "_id.projectKey": 1 } },
+            { $sort: { "_id.date": 1, "_id.modelKey": 1 } },
         ]),
     ]);
     const items = summaryRows.map((row) => ({
-        projectKey: row._id,
-        projectName: row._id,
-        totalWarnings: row.totalWarnings,
+        modelId: row._id,
+        fileName: row.fileName || row._id,
+        projectName: row.projectName || "-",
+        lastWarningCount: row.lastWarningCount,
         sessionCount: row.sessionCount,
     }));
-    const historiesByProjectKey = {};
+    const historiesByModelId = {};
     for (const row of dailyRows) {
-        const key = row._id.projectKey;
-        if (!historiesByProjectKey[key]) {
-            historiesByProjectKey[key] = [];
+        const key = row._id.modelKey;
+        if (!historiesByModelId[key]) {
+            historiesByModelId[key] = [];
         }
-        historiesByProjectKey[key].push({
+        historiesByModelId[key].push({
             date: row._id.date,
-            totalWarnings: row.totalWarnings,
+            warningCount: row.warningCount,
         });
     }
-    return { items, historiesByProjectKey };
+    return { items, historiesByModelId };
+};
+/**
+ * Daily max warning counts for one model (same identity rules as size history).
+ */
+export const getModelWarningsTimeSeries = async (modelId, from, to) => {
+    const selectedIdentifier = modelId.trim();
+    const normalizedModelId = normalizeModelId(modelId);
+    if (!selectedIdentifier || !normalizedModelId) {
+        return [];
+    }
+    const matchStage = {
+        $or: [
+            {
+                modelId: {
+                    $regex: `^\\{?${escapeRegex(normalizedModelId)}\\}?$`,
+                    $options: "i",
+                },
+            },
+            {
+                fileName: {
+                    $regex: `^${escapeRegex(selectedIdentifier)}$`,
+                    $options: "i",
+                },
+            },
+        ],
+    };
+    if (from || to) {
+        const dateFilter = {};
+        if (from) {
+            dateFilter["$gte"] = new Date(from);
+        }
+        if (to) {
+            const endExclusive = new Date(to);
+            endExclusive.setDate(endExclusive.getDate() + 1);
+            dateFilter["$lt"] = endExclusive;
+        }
+        matchStage["dateTime"] = dateFilter;
+    }
+    const rows = await RevitSession.aggregate([
+        { $match: matchStage },
+        {
+            $group: {
+                _id: {
+                    $dateToString: {
+                        format: "%Y-%m-%d",
+                        date: "$dateTime",
+                        timezone: "UTC",
+                    },
+                },
+                warningCount: { $max: { $ifNull: ["$warningCount", 0] } },
+            },
+        },
+        { $sort: { _id: 1 } },
+    ]);
+    return rows.map((row) => ({
+        date: row._id,
+        warningCount: row.warningCount,
+    }));
 };

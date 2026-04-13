@@ -1,4 +1,4 @@
-import { getModelsSummary, getModelSizeHistory, getProjectWarningsData, } from "../services/modelsService.js";
+import { getModelsSummary, getModelSizeHistory, getModelWarningsData, getModelWarningsTimeSeries, } from "../services/modelsService.js";
 export const listModels = async (req, res) => {
     try {
         const from = typeof req.query.from === "string" ? req.query.from : undefined;
@@ -24,15 +24,28 @@ export const getModelHistory = async (req, res) => {
         res.status(500).json({ error: "Internal server error" });
     }
 };
-export const getProjectWarnings = async (req, res) => {
+export const getModelWarningsOverview = async (req, res) => {
     try {
         const from = typeof req.query.from === "string" ? req.query.from : undefined;
         const to = typeof req.query.to === "string" ? req.query.to : undefined;
-        const data = await getProjectWarningsData(from, to);
+        const data = await getModelWarningsData(from, to);
         res.json(data);
     }
     catch (err) {
-        console.error("getProjectWarnings error:", err);
+        console.error("getModelWarningsOverview error:", err);
+        res.status(500).json({ error: "Internal server error" });
+    }
+};
+export const getModelWarningsHistory = async (req, res) => {
+    try {
+        const modelId = typeof req.params.modelId === "string" ? req.params.modelId : "";
+        const from = typeof req.query.from === "string" ? req.query.from : undefined;
+        const to = typeof req.query.to === "string" ? req.query.to : undefined;
+        const points = await getModelWarningsTimeSeries(modelId, from, to);
+        res.json({ modelId, points });
+    }
+    catch (err) {
+        console.error("getModelWarningsHistory error:", err);
         res.status(500).json({ error: "Internal server error" });
     }
 };

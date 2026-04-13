@@ -599,16 +599,20 @@ function normalizeNextContentsPath(href) {
         return t;
     return t.startsWith("/") ? t : `/${t}`;
 }
+/** Isolated fetch avoids TS circular inference on `nextPath` in pagination loops. */
+function fetchFolderContentsPage(token, path) {
+    return apsGetOptional(token, path);
+}
 async function fetchFolderContentsAllPages(token, projectId, folderId) {
     const out = [];
     let nextPath = `/data/v1/projects/${encodeURIComponent(projectId)}/folders/${encodeURIComponent(folderId)}/contents?page[limit]=200`;
     while (nextPath) {
-        const page = await apsGetOptional(token, nextPath);
-        if (!page?.data?.length)
+        const batch = await fetchFolderContentsPage(token, nextPath);
+        if (!batch?.data?.length)
             break;
-        out.push(...page.data);
-        const nextHref = page.links?.next?.href?.trim();
-        nextPath = nextHref ? normalizeNextContentsPath(nextHref) : null;
+        out.push(...batch.data);
+        const href = batch.links?.next?.href?.trim();
+        nextPath = href ? normalizeNextContentsPath(href) : null;
     }
     return out;
 }
