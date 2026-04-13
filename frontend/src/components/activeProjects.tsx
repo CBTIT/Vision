@@ -37,7 +37,6 @@ export default function ActiveProjects() {
     );
   }
 
-  const subtitle = `${items.length} active project${items.length !== 1 ? "s" : ""}`;
 
   return (
     <div className="space-y-4">
