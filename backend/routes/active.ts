@@ -1,5 +1,7 @@
 import express from "express";
 import {
+  getActiveProjectUsersController,
+  getActiveProjectsController,
   getActiveUsersController,
   getActiveUsersCountController,
 } from "../controllers/activeController.js";
@@ -10,5 +12,7 @@ userRouter.get("/", (req, res) => {
 });
 userRouter.get("/count", getActiveUsersCountController);
 userRouter.get("/users", getActiveUsersController);
+userRouter.get("/projects", getActiveProjectsController);
+userRouter.get("/project-users", getActiveProjectUsersController);
 
 export default userRouter;

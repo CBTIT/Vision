@@ -23,6 +23,11 @@ import {
   SheetHeader,
   SheetTitle,
 } from "@/components/ui/sheet";
+import {
+  CLICKABLE_CARD_HOVER,
+  CLICKABLE_TABLE_ROW_HOVER,
+  cn,
+} from "@/lib/utils";
 
 type DetailMode = "session" | "sync";
 type SyncTimelineItem = {
@@ -295,11 +300,12 @@ function UserSummaryCard({
   return (
     <Card
       onClick={onClick}
-      className={`cursor-pointer border-border/90 bg-background/95 shadow-sm transition-colors ${
+      className={cn(
+        "border-border/90 bg-background/95 shadow-sm",
         isSelected
-          ? "ring-2 ring-blue-400/70 dark:ring-blue-500/60"
-          : "hover:bg-muted/30"
-      }`}
+          ? "cursor-pointer transition-[background-color,box-shadow] duration-200 hover:shadow-sm ring-2 ring-blue-400/70 hover:ring-blue-500 dark:ring-blue-500/60 dark:hover:ring-blue-400 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
+          : cn(CLICKABLE_CARD_HOVER, "hover:bg-muted/30"),
+      )}
     >
       <CardHeader className="pb-2">
         <CardTitle className="truncate text-sm font-semibold">
@@ -1254,7 +1260,10 @@ export default function AllUsers() {
                                   {userSessions.map((session) => (
                                     <tr
                                       key={session._id}
-                                      className="cursor-pointer border-t hover:bg-muted/30"
+                                      className={cn(
+                                        "border-t",
+                                        CLICKABLE_TABLE_ROW_HOVER,
+                                      )}
                                       onClick={() => {
                                         setDetailMode("session");
                                         setDetailItem(session);
@@ -1312,7 +1321,10 @@ export default function AllUsers() {
                                   {userSyncs.map((sync) => (
                                     <tr
                                       key={sync._id}
-                                      className="cursor-pointer border-t hover:bg-muted/30"
+                                      className={cn(
+                                        "border-t",
+                                        CLICKABLE_TABLE_ROW_HOVER,
+                                      )}
                                       onClick={() => {
                                         setDetailMode("sync");
                                         setDetailItem(sync);

@@ -11,7 +11,51 @@ type SessionFilters = {
   autodeskUserName?: string;
   modelId?: string;
   deviceName?: string;
+  /** Case-insensitive exact match on RevitSession.cloudProjectName */
+  cloudProjectName?: string;
+  /** When true, only sessions with crashStatus true */
+  crashOnly?: boolean;
 };
+
+function buildDateRangeMatch(filters: { from?: string; to?: string }): {
+  dateTime?: { $gte?: Date; $lt?: Date };
+} {
+  if (!filters.from && !filters.to) return {};
+  const dateTime: { $gte?: Date; $lt?: Date } = {};
+  if (filters.from) {
+    dateTime.$gte = new Date(filters.from);
+  }
+  if (filters.to) {
+    const end = new Date(filters.to);
+    end.setDate(end.getDate() + 1);
+    dateTime.$lt = end;
+  }
+  return { dateTime };
+}
+
+function addCloudProjectNameClause(
+  match: Record<string, unknown>,
+  cloudProjectName: string | undefined,
+): void {
+  const t = cloudProjectName?.trim();
+  if (!t) return;
+  match.cloudProjectName = {
+    $regex: `^${escapeRegex(t)}$`,
+    $options: "i",
+  };
+}
+
+function addModelIdClause(
+  match: Record<string, unknown>,
+  modelId: string | undefined,
+): void {
+  const normalized = modelId?.trim() ? normalizeModelId(modelId.trim()) : "";
+  if (!normalized) return;
+  match.modelId = {
+    $regex: `^\\{?${escapeRegex(normalized)}\\}?$`,
+    $options: "i",
+  };
+}
 
 function escapeRegex(value: string): string {
   return value.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
@@ -71,18 +115,179 @@ const buildSessionFilters = (filters: SessionFilters) => {
       $options: "i",
     };
   }
-  if (filters.from || filters.to) {
-    query.dateTime = {};
-    if (filters.from) {
-      query.dateTime.$gte = new Date(filters.from);
-    }
-    if (filters.to) {
-      const end = new Date(filters.to);
-      end.setDate(end.getDate() + 1);
-      query.dateTime.$lt = end;
+  Object.assign(query, buildDateRangeMatch(filters));
+
+  if (filters.cloudProjectName) {
+    const t = filters.cloudProjectName.trim();
+    if (t) {
+      query.cloudProjectName = {
+        $regex: `^${escapeRegex(t)}$`,
+        $options: "i",
+      };
     }
   }
+  if (filters.crashOnly) {
+    query.crashStatus = true;
+  }
   return query;
+};
+
+export type SessionFilterOptions = {
+  projects: string[];
+  models: Array<{ modelId: string; label: string; count: number }>;
+  users: Array<{
+    autodeskUserName: string;
+    fullName: string;
+    count: number;
+  }>;
+};
+
+/**
+ * Distinct projects / models / users for session list dropdowns.
+ * Hierarchy: projects always for the date range; models for date (+ project when set);
+ * users for date (+ project when set + model when set).
+ */
+export const getSessionFilterOptions = async (filters: {
+  from?: string;
+  to?: string;
+  /** Narrow models + user list to this ACC project */
+  cloudProjectName?: string;
+  /** Narrow user list to this model (with date + optional project) */
+  modelId?: string;
+}): Promise<SessionFilterOptions> => {
+  const dateRange = buildDateRangeMatch(filters);
+
+  const projectListMatch: Record<string, unknown> = {
+    ...dateRange,
+    cloudProjectName: { $nin: [null, ""] },
+  };
+
+  const modelListMatch: Record<string, unknown> = { ...dateRange };
+  addCloudProjectNameClause(modelListMatch, filters.cloudProjectName);
+
+  const userListMatch: Record<string, unknown> = { ...dateRange };
+  addCloudProjectNameClause(userListMatch, filters.cloudProjectName);
+  addModelIdClause(userListMatch, filters.modelId);
+
+  const [rawProjects, modelAgg, userAgg] = await Promise.all([
+    RevitSession.distinct("cloudProjectName", projectListMatch),
+    RevitSession.aggregate([
+      { $match: modelListMatch },
+      {
+        $group: {
+          _id: "$modelId",
+          fileName: { $first: "$fileName" },
+          count: { $sum: 1 },
+        },
+      },
+      { $match: { _id: { $nin: [null, ""] } } },
+      { $sort: { fileName: 1, _id: 1 } },
+    ]),
+    RevitSession.aggregate([
+      {
+        $match: {
+          ...userListMatch,
+          autodeskUserName: { $nin: [null, ""] },
+        },
+      },
+      {
+        $group: {
+          _id: "$autodeskUserName",
+          count: { $sum: 1 },
+        },
+      },
+      { $sort: { _id: 1 } },
+    ]),
+  ]);
+
+  const projects = Array.from(
+    new Set(
+      rawProjects
+        .filter((p): p is string => typeof p === "string" && p.trim().length > 0)
+        .map((p) => p.trim()),
+    ),
+  ).sort((a, b) => a.localeCompare(b, undefined, { sensitivity: "base" }));
+
+  const models: Array<{ modelId: string; label: string; count: number }> =
+    modelAgg
+      .map(
+        (row: {
+          _id?: unknown;
+          fileName?: unknown;
+          count?: unknown;
+        }) => {
+          const id =
+            typeof row._id === "string"
+              ? row._id.trim()
+              : row._id != null
+                ? String(row._id).trim()
+                : "";
+          const file =
+            typeof row.fileName === "string" && row.fileName.trim()
+              ? row.fileName.trim()
+              : "";
+          const count =
+            typeof row.count === "number" && Number.isFinite(row.count)
+              ? row.count
+              : 0;
+          return {
+            modelId: id,
+            label: file || id || "Unknown model",
+            count,
+          };
+        },
+      )
+      .filter((m) => m.modelId.length > 0);
+
+  const userNames = userAgg
+    .map((row: { _id?: unknown; count?: unknown }) =>
+      typeof row._id === "string"
+        ? row._id.trim()
+        : row._id != null
+          ? String(row._id).trim()
+          : "",
+    )
+    .filter((u) => u.length > 0);
+
+  const mappingDocs =
+    userNames.length > 0
+      ? await UserMappings.find({ autodeskUserName: { $in: userNames } })
+          .select({ autodeskUserName: 1, fullName: 1 })
+          .lean()
+      : [];
+
+  const fullNameMap = new Map(
+    mappingDocs.map((d) => [d.autodeskUserName, d.fullName ?? ""]),
+  );
+
+  const users = userAgg
+    .map((row: { _id?: unknown; count?: unknown }) => {
+      const autodeskUserName =
+        typeof row._id === "string"
+          ? row._id.trim()
+          : row._id != null
+            ? String(row._id).trim()
+            : "";
+      const count =
+        typeof row.count === "number" && Number.isFinite(row.count)
+          ? row.count
+          : 0;
+      if (!autodeskUserName) return null;
+      return {
+        autodeskUserName,
+        fullName: String(fullNameMap.get(autodeskUserName) ?? "").trim(),
+        count,
+      };
+    })
+    .filter(
+      (u): u is {
+        autodeskUserName: string;
+        fullName: string;
+        count: number;
+      } => u !== null,
+    );
+
+  return { projects, models, users };
 };
 export const getSesisonsCount = async (filters: SessionFilters) => {
   const query = buildSessionFilters(filters);

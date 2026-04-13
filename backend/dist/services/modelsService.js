@@ -27,6 +27,7 @@ export const getModelsSummary = async (from, to) => {
     const [results, userMappings] = await Promise.all([
         RevitSession.aggregate([
             { $match: matchStage },
+            { $sort: { dateTime: 1 } },
             {
                 $group: {
                     _id: {
@@ -60,6 +61,7 @@ export const getModelsSummary = async (from, to) => {
                     lastAccessedAt: { $max: "$dateTime" },
                     lastAccessedBy: { $last: "$autodeskUserName" },
                     lastAccessedByFullName: { $last: "$fullName" },
+                    revitVersion: { $last: "$revitVersion" },
                     uniqueUsers: { $addToSet: "$autodeskUserName" },
                     sessionCount: { $sum: 1 },
                 },
@@ -84,6 +86,7 @@ export const getModelsSummary = async (from, to) => {
             ? r.lastAccessedByFullName.trim()
             : "";
         const mappedName = fullNameMap.get(r.lastAccessedBy || "") || "";
+        const revitVersionRaw = typeof r.revitVersion === "string" ? r.revitVersion.trim() : "";
         return {
             modelId: r._id,
             fileName: r.fileName || r._id,
@@ -92,6 +95,7 @@ export const getModelsSummary = async (from, to) => {
             lastAccessedAt: r.lastAccessedAt ? r.lastAccessedAt.toISOString() : "",
             lastAccessedBy: r.lastAccessedBy || "-",
             lastAccessedByFullName: mappedName || fallbackName,
+            revitVersion: revitVersionRaw,
             usersCount: Array.isArray(r.uniqueUsers)
                 ? r.uniqueUsers
                     .filter((name) => typeof name === "string")

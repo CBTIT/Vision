@@ -12,6 +12,7 @@ import {
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Skeleton } from "@/components/ui/skeleton";
+import { CLICKABLE_CARD_HOVER, cn } from "@/lib/utils";
 
 type ProjectGroup = "bim" | "accForma";
 type DetailsTab = "models" | "users" | "companies";
@@ -190,11 +191,16 @@ export default function CloudData() {
                       key={projectKey(project)}
                       type="button"
                       onClick={() => setSelectedProjectKey(projectKey(project))}
-                      className={`w-full rounded-lg border px-3 py-2 text-left transition-colors ${
+                      className={cn(
+                        "w-full rounded-lg border px-3 py-2 text-left",
                         selected
                           ? "border-blue-400/70 bg-blue-50 dark:border-blue-600/70 dark:bg-blue-950/40"
-                          : "border-border hover:bg-muted/35"
-                      }`}
+                          : cn(
+                              "border-border",
+                              CLICKABLE_CARD_HOVER,
+                              "hover:bg-muted/35",
+                            ),
+                      )}
                     >
                       <p className="truncate text-sm font-semibold">
                         {project.name}

@@ -31,6 +31,10 @@ const data = {
       url: "/active-users",
     },
     {
+      title: "Active Projects",
+      url: "/active-projects",
+    },
+    {
       title: "All Models",
       url: "/models",
     },

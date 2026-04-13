@@ -1,6 +1,6 @@
 import { useEffect, useState } from "react";
 import { format, parseISO, startOfDay } from "date-fns";
-import { Layers, PlugZap, RefreshCw, Users } from "lucide-react";
+import { Building2, Layers, PlugZap, RefreshCw, Users } from "lucide-react";
 import { useNavigate } from "react-router-dom";
 import {
   Area,
@@ -23,6 +23,7 @@ import {
   fetchSessionsCount,
   fetchSyncsCount,
   fetchActiveUsersCount,
+  fetchActiveProjects,
   fetchPluginUseCount,
   fetchOverviewDailyCounts,
   type OverviewDailyPoint,
@@ -35,7 +36,7 @@ import {
   CardContent,
 } from "@/components/ui/card";
 import { Skeleton } from "@/components/ui/skeleton";
-import { cn } from "@/lib/utils";
+import { CLICKABLE_CARD_HOVER, cn } from "@/lib/utils";
 
 function useCountUp(target: number | null, duration = 800) {
   const [value, setValue] = useState(0);
@@ -89,11 +90,7 @@ function StatCard({
     <Card
       size="sm"
       onClick={onClick}
-      className={
-        onClick
-          ? "cursor-pointer transition-colors hover:bg-muted/40"
-          : undefined
-      }
+      className={cn(onClick && CLICKABLE_CARD_HOVER, onClick && "hover:bg-muted/40")}
     >
       <CardHeader>
         <CardTitle className="text-sm font-medium text-muted-foreground">
@@ -242,8 +239,10 @@ function DailyTrendChart({
   }));
   const xTicks = getAdaptiveTicks(chartData);
   const { isDark } = useTheme();
-  const axisStroke = isDark ? "#4b5563" : "#6b7280";
-  const gridStroke = isDark ? "#374151" : "#d1d5db";
+  const axisStroke = isDark ? "#6b7280" : "#9ca3af";
+  const gridStroke = isDark ? "#4b5563" : "#d1d5db";
+  /** Recharts SVG ticks do not resolve `hsl(var(--…))` reliably — use explicit colors */
+  const tickFill = isDark ? "#e5e7eb" : "#374151";
   const sessionsGradientId = "sessions-gradient";
   const syncsGradientId = "syncs-gradient";
 
@@ -252,8 +251,16 @@ function DailyTrendChart({
     onDateClick(state.activeLabel);
   }
 
+  const chartInteractive = !loading && points.length > 0;
+
   return (
-    <Card className="flex min-h-0 flex-1 flex-col">
+    <Card
+      className={cn(
+        "flex min-h-0 flex-1 flex-col",
+        chartInteractive && CLICKABLE_CARD_HOVER,
+        chartInteractive && "hover:bg-muted/15",
+      )}
+    >
       <CardHeader>
         <CardTitle>Sessions & Syncs Over Time</CardTitle>
       </CardHeader>
@@ -338,7 +345,7 @@ function DailyTrendChart({
                       axisLine={{ stroke: axisStroke, strokeWidth: 1.4 }}
                       tickLine={{ stroke: axisStroke, strokeWidth: 1.2 }}
                       tick={{
-                        fill: "hsl(var(--muted-foreground))",
+                        fill: tickFill,
                         fontSize: 12,
                         fontWeight: 500,
                       }}
@@ -354,7 +361,7 @@ function DailyTrendChart({
                       axisLine={{ stroke: axisStroke, strokeWidth: 1.4 }}
                       tickLine={{ stroke: axisStroke, strokeWidth: 1.2 }}
                       tick={{
-                        fill: "hsl(var(--muted-foreground))",
+                        fill: tickFill,
                         fontSize: 12,
                         fontWeight: 500,
                       }}
@@ -446,10 +453,14 @@ const Overview = () => {
   const [sessionCount, setSessionCount] = useState<number | null>(null);
   const [syncCount, setSyncCount] = useState<number | null>(null);
   const [activeCount, setActiveCount] = useState<number | null>(null);
+  const [activeProjectsCount, setActiveProjectsCount] = useState<number | null>(
+    null,
+  );
   const [pluginCount, setPluginCount] = useState<number | null>(null);
   const [sessionsLoading, setSessionsLoading] = useState(true);
   const [syncsLoading, setSyncsLoading] = useState(true);
   const [activeLoading, setActiveLoading] = useState(true);
+  const [activeProjectsLoading, setActiveProjectsLoading] = useState(true);
   const [pluginLoading, setPluginLoading] = useState(true);
   const [chartLoading, setChartLoading] = useState(true);
   const [chartPoints, setChartPoints] = useState<OverviewDailyPoint[]>([]);
@@ -488,10 +499,17 @@ const Overview = () => {
   }, [from, to, refreshKey]);
 
   useEffect(() => {
+    setActiveLoading(true);
     fetchActiveUsersCount()
       .then(setActiveCount)
       .catch(() => setActiveCount(null))
       .finally(() => setActiveLoading(false));
+
+    setActiveProjectsLoading(true);
+    fetchActiveProjects()
+      .then((projects) => setActiveProjectsCount(projects.length))
+      .catch(() => setActiveProjectsCount(null))
+      .finally(() => setActiveProjectsLoading(false));
 
     fetchPluginUseCount()
       .then(setPluginCount)
@@ -519,7 +537,7 @@ const Overview = () => {
 
   return (
     <div className="flex min-h-[calc(100vh-11rem)] flex-col gap-6">
-      <div className="grid shrink-0 gap-4 sm:grid-cols-2 xl:grid-cols-4">
+      <div className="grid shrink-0 gap-4 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-5">
         <StatCard
           title="Sessions"
           value={sessionCount}
@@ -537,6 +555,15 @@ const Overview = () => {
           iconBg="bg-violet-500/10"
           description={rangeLabel}
           onClick={() => navigate("/syncs")}
+        />
+        <StatCard
+          title="Active Projects"
+          value={activeProjectsCount}
+          loading={activeProjectsLoading}
+          icon={<Building2 className="size-4 text-sky-500" />}
+          iconBg="bg-sky-500/10"
+          description="Right now"
+          onClick={() => navigate("/active-projects")}
         />
         <StatCard
           title="Active Users"

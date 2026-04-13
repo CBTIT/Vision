@@ -89,6 +89,8 @@ export type ActiveUserItem = {
   activeViewId?: string | null;
   activeViewName?: string | null;
   activeProjectName?: string | null;
+  /** Project keys from each open doc (same rules as Active Projects), not only the UI-active project */
+  projectKeysFromOpenDocs?: string[];
   ts: string;
 };
 
@@ -244,6 +246,45 @@ export async function fetchActiveUsers(): Promise<ActiveUserItem[]> {
   return data.activeUsers;
 }
 
+export type ActiveProjectSummaryItem = {
+  projectName: string;
+  activeUsersCount: number;
+  activeModelsCount: number;
+  /** Revit file names (or open-doc titles) counted toward activeModelsCount */
+  activeModelNames: string[];
+};
+
+export async function fetchActiveProjects(): Promise<ActiveProjectSummaryItem[]> {
+  const data = await apiFetch<{ projects: ActiveProjectSummaryItem[] }>(
+    "/api/active/projects",
+  );
+  return (data.projects ?? []).map((p) => ({
+    ...p,
+    activeModelNames: p.activeModelNames ?? [],
+  }));
+}
+
+export type ActiveProjectUserRow = {
+  autodeskUserName: string;
+  fullName: string;
+  machine: string;
+  revitVersion: string;
+  activeModelName: string | null;
+  sessionId: string | null;
+  sessionStartAt: string | null;
+  durationSeconds: number | null;
+};
+
+export async function fetchActiveProjectUsers(projectName: string): Promise<{
+  projectName: string;
+  users: ActiveProjectUserRow[];
+}> {
+  const q = encodeURIComponent(projectName);
+  return apiFetch<{ projectName: string; users: ActiveProjectUserRow[] }>(
+    `/api/active/project-users?projectName=${q}`,
+  );
+}
+
 export async function fetchPluginUseCount(): Promise<number> {
   const data = await apiFetch<{ pluginUseCount: number }>("/api/plugins/count");
   return data.pluginUseCount;
@@ -271,6 +312,39 @@ export async function fetchOverviewDateBounds(): Promise<{
   return apiFetch<{ from: string; to: string }>("/api/overview/date-bounds");
 }
 
+export type SessionFilterOptions = {
+  projects: string[];
+  models: Array<{ modelId: string; label: string; count: number }>;
+  users: Array<{
+    autodeskUserName: string;
+    fullName: string;
+    count: number;
+  }>;
+};
+
+export async function fetchSessionFilterOptions(params: {
+  from?: string;
+  to?: string;
+  /** Cascading: narrows models + users */
+  cloudProjectName?: string;
+  /** Cascading: narrows users (after project when set) */
+  modelId?: string;
+}): Promise<SessionFilterOptions> {
+  const query: Record<string, string> = {};
+  if (params.from) query.from = params.from;
+  if (params.to) query.to = params.to;
+  if (params.cloudProjectName) {
+    query.cloudProjectName = params.cloudProjectName;
+  }
+  if (params.modelId) {
+    query.modelId = params.modelId;
+  }
+  return apiFetch<SessionFilterOptions>(
+    "/api/sessions/filter-options",
+    query,
+  );
+}
+
 export async function fetchSessionsList(params: {
   from?: string;
   to?: string;
@@ -279,6 +353,9 @@ export async function fetchSessionsList(params: {
   autodeskUserName?: string;
   modelId?: string;
   deviceName?: string;
+  cloudProjectName?: string;
+  /** Only sessions with crash flag set */
+  crashOnly?: boolean;
 }): Promise<PaginatedListResponse<SessionListItem>> {
   const query: Record<string, string> = {
     page: String(params.page),
@@ -294,6 +371,12 @@ export async function fetchSessionsList(params: {
   }
   if (params.deviceName) {
     query.deviceName = params.deviceName;
+  }
+  if (params.cloudProjectName) {
+    query.cloudProjectName = params.cloudProjectName;
+  }
+  if (params.crashOnly) {
+    query.crashOnly = "true";
   }
   return apiFetch<PaginatedListResponse<SessionListItem>>(
     "/api/sessions",
@@ -365,6 +448,7 @@ export type ModelSummaryItem = {
   lastAccessedAt: string;
   lastAccessedBy: string;
   lastAccessedByFullName?: string;
+  revitVersion: string;
   usersCount: number;
   sessionCount: number;
 };

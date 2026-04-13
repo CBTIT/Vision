@@ -9,6 +9,7 @@ export type ModelSummary = {
   lastAccessedAt: string;
   lastAccessedBy: string;
   lastAccessedByFullName?: string;
+  revitVersion: string;
   usersCount: number;
   sessionCount: number;
 };
@@ -55,6 +56,7 @@ export const getModelsSummary = async (
     lastFileSize: number | null;
     lastAccessedAt: Date;
     lastAccessedBy: string;
+    revitVersion?: string;
     sessionCount: number;
     uniqueUsers: string[];
     // full name joined from last session (may not exist)
@@ -64,6 +66,7 @@ export const getModelsSummary = async (
   const [results, userMappings] = await Promise.all([
     RevitSession.aggregate<RawModel>([
       { $match: matchStage },
+      { $sort: { dateTime: 1 } },
       {
         $group: {
           _id: {
@@ -97,6 +100,7 @@ export const getModelsSummary = async (
           lastAccessedAt: { $max: "$dateTime" },
           lastAccessedBy: { $last: "$autodeskUserName" },
           lastAccessedByFullName: { $last: "$fullName" },
+          revitVersion: { $last: "$revitVersion" },
           uniqueUsers: { $addToSet: "$autodeskUserName" },
           sessionCount: { $sum: 1 },
         },
@@ -123,6 +127,9 @@ export const getModelsSummary = async (
         : "";
     const mappedName = fullNameMap.get(r.lastAccessedBy || "") || "";
 
+    const revitVersionRaw =
+      typeof r.revitVersion === "string" ? r.revitVersion.trim() : "";
+
     return {
       modelId: r._id,
       fileName: r.fileName || r._id,
@@ -131,6 +138,7 @@ export const getModelsSummary = async (
       lastAccessedAt: r.lastAccessedAt ? r.lastAccessedAt.toISOString() : "",
       lastAccessedBy: r.lastAccessedBy || "-",
       lastAccessedByFullName: mappedName || fallbackName,
+      revitVersion: revitVersionRaw,
       usersCount: Array.isArray(r.uniqueUsers)
         ? r.uniqueUsers
             .filter((name): name is string => typeof name === "string")

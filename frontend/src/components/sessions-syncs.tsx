@@ -3,6 +3,11 @@ import { format } from "date-fns";
 import { ChevronLeft, ChevronRight } from "lucide-react";
 import { useLocation, useNavigate } from "react-router-dom";
 
+import {
+  CLICKABLE_CARD_HOVER,
+  CLICKABLE_CARD_HOVER_ROSE,
+  cn,
+} from "@/lib/utils";
 import { useHeaderRight } from "./header-context";
 import { DateRangeFilter } from "./date-range-filter";
 import { useDateRange } from "./date-range-context";
@@ -10,10 +15,12 @@ import { useAutoRefresh } from "@/hooks/use-auto-refresh";
 import { RefreshButton } from "@/components/refresh-button";
 import {
   fetchSessionById,
+  fetchSessionFilterOptions,
   fetchSessionsList,
   fetchSyncById,
   fetchSyncsList,
   type PaginatedListResponse,
+  type SessionFilterOptions,
   type SessionListItem,
   type SyncListItem,
 } from "@/lib/api";
@@ -35,6 +42,25 @@ type SyncTimelineItem = {
   time: string;
   gapMinutesFromPrevious: number | null;
 };
+
+function formatSessionUserOptionLabel(u: {
+  autodeskUserName: string;
+  fullName: string;
+  count: number;
+}): string {
+  const display = u.fullName?.trim() || u.autodeskUserName;
+  const n = typeof u.count === "number" && Number.isFinite(u.count) ? u.count : 0;
+  return `${display} (${n})`;
+}
+
+function formatSessionModelOptionLabel(m: {
+  label: string;
+  count: number;
+}): string {
+  const n =
+    typeof m.count === "number" && Number.isFinite(m.count) ? m.count : 0;
+  return `${m.label} (${n})`;
+}
 
 function isCrashSession(item: SessionListItem | null): boolean {
   if (!item) return false;
@@ -303,11 +329,13 @@ function SessionCard({
 
   return (
     <Card
-      className={`w-full cursor-pointer transition-colors ${
+      className={cn(
+        "w-full",
+        crash ? CLICKABLE_CARD_HOVER_ROSE : CLICKABLE_CARD_HOVER,
         crash
           ? "border-rose-300 bg-rose-50/60 hover:bg-rose-100/60 dark:border-rose-800 dark:bg-rose-950/40 dark:hover:bg-rose-950/60"
-          : "hover:bg-muted/30"
-      }`}
+          : "hover:bg-muted/30",
+      )}
       onClick={onClick}
     >
       <CardContent className="py-4">
@@ -390,7 +418,7 @@ function SyncCard({
 }) {
   return (
     <Card
-      className="w-full cursor-pointer transition-colors hover:bg-muted/30"
+      className={cn("w-full", CLICKABLE_CARD_HOVER, "hover:bg-muted/30")}
       onClick={onClick}
     >
       <CardContent className="py-4">
@@ -458,6 +486,15 @@ export default function SessionsSyncsPage({ mode }: { mode: Mode }) {
   const [expandedSyncsBySessionId, setExpandedSyncsBySessionId] = useState<
     Record<string, boolean>
   >({});
+  const [sessionScope, setSessionScope] = useState<"all" | "crash">("all");
+  const [filterProject, setFilterProject] = useState<"all" | string>("all");
+  const [filterModel, setFilterModel] = useState<"all" | string>("all");
+  const [filterUser, setFilterUser] = useState<"all" | string>("all");
+  const [filterOptions, setFilterOptions] = useState<SessionFilterOptions>({
+    projects: [],
+    models: [],
+    users: [],
+  });
 
   const fromStr = format(from, "yyyy-MM-dd");
   const toStr = format(to, "yyyy-MM-dd");
@@ -483,7 +520,49 @@ export default function SessionsSyncsPage({ mode }: { mode: Mode }) {
     setSelectedItem(null);
     setShowMoreDetails(false);
     setExpandedSyncsBySessionId({});
+    setFilterProject("all");
+    setFilterModel("all");
+    setFilterUser("all");
+    if (mode !== "sessions") {
+      setSessionScope("all");
+    }
   }, [mode, fromStr, toStr]);
+
+  const clearSessionFilters = useCallback(() => {
+    setFilterProject("all");
+    setFilterModel("all");
+    setFilterUser("all");
+  }, []);
+
+  useEffect(() => {
+    if (mode !== "sessions") {
+      setFilterOptions({ projects: [], models: [], users: [] });
+      return;
+    }
+    let cancelled = false;
+    fetchSessionFilterOptions({
+      from: fromStr,
+      to: toStr,
+      cloudProjectName:
+        filterProject === "all" ? undefined : filterProject,
+      modelId: filterModel === "all" ? undefined : filterModel,
+    })
+      .then((opts) => {
+        if (!cancelled) setFilterOptions(opts);
+      })
+      .catch(() => {
+        if (!cancelled) {
+          setFilterOptions({ projects: [], models: [], users: [] });
+        }
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, [mode, fromStr, toStr, refreshKey, filterProject, filterModel]);
+
+  useEffect(() => {
+    setPage(1);
+  }, [sessionScope, filterProject, filterModel, filterUser]);
 
   useEffect(() => {
     setShowMoreDetails(false);
@@ -784,7 +863,17 @@ export default function SessionsSyncsPage({ mode }: { mode: Mode }) {
 
     const request =
       mode === "sessions"
-        ? fetchSessionsList({ from: fromStr, to: toStr, page, limit })
+        ? fetchSessionsList({
+            from: fromStr,
+            to: toStr,
+            page,
+            limit,
+            crashOnly: sessionScope === "crash" ? true : undefined,
+            cloudProjectName:
+              filterProject === "all" ? undefined : filterProject,
+            modelId: filterModel === "all" ? undefined : filterModel,
+            autodeskUserName: filterUser === "all" ? undefined : filterUser,
+          })
         : fetchSyncsList({ from: fromStr, to: toStr, page, limit });
 
     request
@@ -797,7 +886,18 @@ export default function SessionsSyncsPage({ mode }: { mode: Mode }) {
         setData({ items: [], total: 0, page: 1, limit, totalPages: 1 }),
       )
       .finally(() => setLoading(false));
-  }, [mode, fromStr, toStr, page, limit, refreshKey]);
+  }, [
+    mode,
+    fromStr,
+    toStr,
+    page,
+    limit,
+    refreshKey,
+    sessionScope,
+    filterProject,
+    filterModel,
+    filterUser,
+  ]);
 
   useEffect(() => {
     const state = location.state as { openSessionId?: string } | null;
@@ -857,12 +957,152 @@ export default function SessionsSyncsPage({ mode }: { mode: Mode }) {
       <Card className="shrink-0 border-border/90 bg-background/95 shadow-sm">
         <CardHeader className="pb-3">
           <div className="flex flex-wrap items-center justify-between gap-3">
-            <div>
+            <div className="min-w-0 flex-1">
               <CardTitle>{title}</CardTitle>
-              <p className="text-xs text-muted-foreground">
-                {subtitle} • {data.total} total • Page {data.page} of{" "}
-                {data.totalPages}
-              </p>
+              <div className="mt-0.5 flex flex-wrap items-center gap-x-3 gap-y-1.5">
+                <p className="text-xs text-muted-foreground">
+                  {subtitle} • {data.total} total • Page {data.page} of{" "}
+                  {data.totalPages}
+                </p>
+                {mode === "sessions" && (
+                  <div className="flex shrink-0 items-center gap-2">
+                    <span
+                      id="sessions-crash-filter-label"
+                      className="text-xs font-medium text-muted-foreground whitespace-nowrap"
+                    >
+                      Crash only
+                    </span>
+                    <button
+                      type="button"
+                      id="sessions-crash-filter"
+                      role="switch"
+                      aria-checked={sessionScope === "crash"}
+                      aria-labelledby="sessions-crash-filter-label"
+                      onClick={() =>
+                        setSessionScope((s) =>
+                          s === "crash" ? "all" : "crash",
+                        )
+                      }
+                      className={cn(
+                        "relative inline-flex h-6 w-11 shrink-0 cursor-pointer items-center rounded-full p-0.5 transition-colors",
+                        "focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 focus-visible:ring-offset-background focus-visible:outline-none",
+                        sessionScope === "crash"
+                          ? "bg-primary"
+                          : "bg-input dark:bg-input/80",
+                      )}
+                    >
+                      <span
+                        aria-hidden
+                        className={cn(
+                          "pointer-events-none block size-5 rounded-full bg-background shadow-sm ring-0 transition-transform duration-200 ease-in-out",
+                          sessionScope === "crash"
+                            ? "translate-x-5"
+                            : "translate-x-0",
+                        )}
+                      />
+                    </button>
+                  </div>
+                )}
+              </div>
+              {mode === "sessions" && (
+                <div className="space-y-3 border-t border-border/60 pt-3">
+                  <div className="grid grid-cols-1 gap-3 sm:grid-cols-4">
+                    <div className="flex min-w-0 flex-col gap-1 sm:col-span-1">
+                      <label
+                        htmlFor="sessions-filter-project"
+                        className="text-xs font-medium text-muted-foreground"
+                      >
+                        Project
+                      </label>
+                      <select
+                        id="sessions-filter-project"
+                        value={filterProject}
+                        onChange={(e) => {
+                          setFilterProject(e.target.value);
+                          setFilterModel("all");
+                          setFilterUser("all");
+                        }}
+                        className={cn(
+                          "h-9 w-full rounded-md border border-input bg-background px-2.5 py-1 text-sm shadow-sm",
+                          "focus-visible:ring-2 focus-visible:ring-ring focus-visible:outline-none",
+                        )}
+                      >
+                        <option value="all">All projects</option>
+                        {filterOptions.projects.map((name) => (
+                          <option key={name} value={name}>
+                            {name}
+                          </option>
+                        ))}
+                      </select>
+                    </div>
+                    <div className="flex min-w-0 flex-col gap-1">
+                      <label
+                        htmlFor="sessions-filter-model"
+                        className="text-xs font-medium text-muted-foreground"
+                      >
+                        Model
+                      </label>
+                      <select
+                        id="sessions-filter-model"
+                        value={filterModel}
+                        onChange={(e) => {
+                          setFilterModel(e.target.value);
+                          setFilterUser("all");
+                        }}
+                        className={cn(
+                          "h-9 w-full rounded-md border border-input bg-background px-2.5 py-1 text-sm shadow-sm",
+                          "focus-visible:ring-2 focus-visible:ring-ring focus-visible:outline-none",
+                        )}
+                      >
+                        <option value="all">All models</option>
+                        {filterOptions.models.map((m) => (
+                          <option key={m.modelId} value={m.modelId}>
+                            {formatSessionModelOptionLabel(m)}
+                          </option>
+                        ))}
+                      </select>
+                    </div>
+                    <div className="flex min-w-0 flex-col gap-1">
+                      <label
+                        htmlFor="sessions-filter-user"
+                        className="text-xs font-medium text-muted-foreground"
+                      >
+                        User
+                      </label>
+                      <select
+                        id="sessions-filter-user"
+                        value={filterUser}
+                        onChange={(e) => setFilterUser(e.target.value)}
+                        className={cn(
+                          "h-9 w-full rounded-md border border-input bg-background px-2.5 py-1 text-sm shadow-sm",
+                          "focus-visible:ring-2 focus-visible:ring-ring focus-visible:outline-none",
+                        )}
+                      >
+                        <option value="all">All users</option>
+                        {filterOptions.users.map((u) => (
+                          <option
+                            key={u.autodeskUserName}
+                            value={u.autodeskUserName}
+                          >
+                            {formatSessionUserOptionLabel(u)}
+                          </option>
+                        ))}
+                      </select>
+                    </div>
+                    <div className="flex min-h-[3.25rem] min-w-0 items-end justify-start sm:justify-end">
+                      <Button
+                        type="button"
+                        variant="outline"
+                        size="sm"
+                        className="h-9 w-full shrink-0 sm:w-auto"
+                        onClick={clearSessionFilters}
+                      >
+                        Clear filters
+                      </Button>
+                    </div>
+                  </div>
+                </div>
+              )}
             </div>
             <div className="flex items-center gap-1.5">
               <Button

@@ -22,6 +22,7 @@ import {
   SheetHeader,
   SheetTitle,
 } from "@/components/ui/sheet";
+import { CLICKABLE_CARD_HOVER, cn } from "@/lib/utils";
 
 type PageToken = number | "left-ellipsis" | "right-ellipsis";
 
@@ -72,7 +73,7 @@ function PluginCard({
 }) {
   return (
     <Card
-      className="w-full cursor-pointer transition-colors hover:bg-muted/30"
+      className={cn("w-full", CLICKABLE_CARD_HOVER, "hover:bg-muted/30")}
       onClick={onClick}
     >
       <CardContent className="py-4">

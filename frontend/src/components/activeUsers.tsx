@@ -1,4 +1,6 @@
-import { useEffect, useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useState } from "react";
+import { useLocation, useNavigate } from "react-router-dom";
+import { cn } from "@/lib/utils";
 import { format } from "date-fns";
 import { Eye, FileText, LoaderCircle, UserRound } from "lucide-react";
 
@@ -37,6 +39,16 @@ function isCrashSession(item: SessionListItem | null): boolean {
     return normalized === "true" || normalized === "1";
   }
   return false;
+}
+
+const UNNAMED_ACTIVE_PROJECT = "(Unnamed project)";
+
+function normalizeActiveProjectLabel(
+  raw: string | null | undefined,
+): string {
+  if (typeof raw !== "string") return UNNAMED_ACTIVE_PROJECT;
+  const t = raw.trim();
+  return t.length > 0 ? t : UNNAMED_ACTIVE_PROJECT;
 }
 
 function toTitle(key: string) {
@@ -229,6 +241,8 @@ function getActiveSessionId(item: ActiveUserItem): string {
 }
 
 export default function ActiveUsers() {
+  const location = useLocation();
+  const navigate = useNavigate();
   const setHeaderRight = useHeaderRight();
   const { refreshKey, refresh } = useAutoRefresh();
 
@@ -239,6 +253,72 @@ export default function ActiveUsers() {
   const [showMoreDetails, setShowMoreDetails] = useState(false);
   const [selectedSession, setSelectedSession] =
     useState<SessionListItem | null>(null);
+  const [projectFilter, setProjectFilter] = useState<string>(() => {
+    const params = new URLSearchParams(location.search);
+    const raw = params.get("project");
+    if (!raw || !raw.trim()) return "all";
+    return raw.trim();
+  });
+
+  useEffect(() => {
+    const params = new URLSearchParams(location.search);
+    const raw = params.get("project");
+    if (!raw || !raw.trim()) {
+      setProjectFilter("all");
+    } else {
+      setProjectFilter(raw.trim());
+    }
+  }, [location.search]);
+
+  const applyProjectFilter = useCallback(
+    (next: string) => {
+      setProjectFilter(next);
+      if (next === "all") {
+        navigate("/active-users", { replace: true });
+      } else {
+        navigate(
+          `/active-users?project=${encodeURIComponent(next)}`,
+          { replace: true },
+        );
+      }
+    },
+    [navigate],
+  );
+
+  const projectOptions = useMemo(() => {
+    const names = new Set<string>();
+    for (const item of items) {
+      names.add(normalizeActiveProjectLabel(item.activeProjectName));
+      for (const pk of item.projectKeysFromOpenDocs ?? []) {
+        if (pk) names.add(pk);
+      }
+    }
+    return [...names].sort((a, b) =>
+      a.localeCompare(b, undefined, { sensitivity: "base" }),
+    );
+  }, [items]);
+
+  const filteredItems = useMemo(() => {
+    if (projectFilter === "all") return items;
+    return items.filter((item) => {
+      const keys = item.projectKeysFromOpenDocs;
+      if (keys && keys.length > 0) {
+        return keys.some((k) => k === projectFilter);
+      }
+      return (
+        normalizeActiveProjectLabel(item.activeProjectName) === projectFilter
+      );
+    });
+  }, [items, projectFilter]);
+
+  useEffect(() => {
+    if (projectFilter === "all") return;
+    if (loading) return;
+    if (!projectOptions.includes(projectFilter)) {
+      setProjectFilter("all");
+      navigate("/active-users", { replace: true });
+    }
+  }, [projectOptions, projectFilter, loading, navigate]);
 
   useEffect(() => {
     setHeaderRight(<RefreshButton onRefresh={refresh} />);
@@ -306,7 +386,7 @@ export default function ActiveUsers() {
     }
   }
 
-  const subtitle = `${items.length} active user${items.length !== 1 ? "s" : ""}`;
+  const subtitle = `${filteredItems.length} active user${filteredItems.length !== 1 ? "s" : ""}`;
 
   const sessionPrimaryFields = useMemo(() => {
     if (!selectedSession) {
@@ -542,9 +622,39 @@ export default function ActiveUsers() {
   return (
     <div className="space-y-4">
       <Card className="shrink-0 border-border/90 bg-background/95 shadow-sm">
-        <CardHeader className="pb-3">
-          <CardTitle>Active Users</CardTitle>
-          <p className="text-xs text-muted-foreground">{subtitle}</p>
+        <CardHeader className="flex flex-col gap-4 pb-3 sm:flex-row sm:items-start sm:justify-between sm:gap-6">
+          <div className="min-w-0 flex-1">
+            <CardTitle>Active Users</CardTitle>
+            <p className="text-xs text-muted-foreground">{subtitle}</p>
+            <p className="mt-1 text-xs text-muted-foreground">
+              Select a cloud project to show only users currently in that
+              project.
+            </p>
+          </div>
+          <div className="flex w-full shrink-0 flex-col gap-1.5 sm:w-auto sm:min-w-[14rem]">
+            <label
+              htmlFor="active-users-project-filter"
+              className="text-xs font-medium text-muted-foreground"
+            >
+              Project
+            </label>
+            <select
+              id="active-users-project-filter"
+              value={projectFilter}
+              onChange={(e) => applyProjectFilter(e.target.value)}
+              className={cn(
+                "h-9 w-full rounded-md border border-input bg-background px-2.5 py-1 text-sm shadow-sm",
+                "focus-visible:ring-2 focus-visible:ring-ring focus-visible:outline-none",
+              )}
+            >
+              <option value="all">All projects</option>
+              {projectOptions.map((name) => (
+                <option key={name} value={name}>
+                  {name}
+                </option>
+              ))}
+            </select>
+          </div>
         </CardHeader>
       </Card>
 
@@ -560,9 +670,16 @@ export default function ActiveUsers() {
             No active users right now.
           </CardContent>
         </Card>
+      ) : filteredItems.length === 0 ? (
+        <Card>
+          <CardContent className="py-8 text-center text-sm text-muted-foreground">
+            No active users in this project. Choose another project or
+            &quot;All projects&quot;.
+          </CardContent>
+        </Card>
       ) : (
         <div className="grid grid-cols-1 gap-3 md:grid-cols-2 xl:grid-cols-3 2xl:grid-cols-4">
-          {items.map((item) => {
+          {filteredItems.map((item) => {
             const displayName = item.fullName?.trim() || item.user;
             const updatedAt = formatDateTime(item.ts);
             const activeSessionId = getActiveSessionId(item);
