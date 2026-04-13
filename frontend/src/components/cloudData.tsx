@@ -42,7 +42,8 @@ type CloudProjectListSortKey = "name" | "dateAdded";
 type UserAccessFilter = "all" | "admin" | "nonAdmin";
 
 /** Matches ACC-style access strings (Hub/Project/Executive + product administrator). */
-function isUserAccessAdmin(accessLevel: string): boolean {
+function isUserAccessAdmin(accessLevel: unknown): boolean {
+  if (accessLevel == null || typeof accessLevel !== "string") return false;
   const s = accessLevel.trim().toLowerCase();
   if (!s || s === "-") return false;
   if (s.includes("hub admin")) return true;
@@ -52,12 +53,16 @@ function isUserAccessAdmin(accessLevel: string): boolean {
   return false;
 }
 
-function compareUserFieldStrings(a: string, b: string): number {
-  return a.localeCompare(b, undefined, { numeric: true, sensitivity: "base" });
+function compareUserFieldStrings(a: unknown, b: unknown): number {
+  const sa = typeof a === "string" ? a : a == null ? "" : String(a);
+  const sb = typeof b === "string" ? b : b == null ? "" : String(b);
+  return sa.localeCompare(sb, undefined, { numeric: true, sensitivity: "base" });
 }
 
-function projectDateSortValue(iso: string): number | null {
-  const t = iso?.trim();
+function projectDateSortValue(iso: unknown): number | null {
+  if (iso == null) return null;
+  const t =
+    typeof iso === "string" ? iso.trim() : String(iso).trim();
   if (!t) return null;
   const ms = new Date(t).getTime();
   return Number.isNaN(ms) ? null : ms;
@@ -65,8 +70,8 @@ function projectDateSortValue(iso: string): number | null {
 
 /** Missing dates sort after dated rows in both directions. */
 function compareProjectListDates(
-  a: string,
-  b: string,
+  a: unknown,
+  b: unknown,
   dir: "asc" | "desc",
 ): number {
   const va = projectDateSortValue(a);
@@ -83,20 +88,25 @@ function projectKey(item: CloudProjectListItem): string {
 }
 
 /** Match project users’ company string to a partner company row (name). */
-function normalizeCompanyLabel(value: string): string {
+function normalizeCompanyLabel(value: unknown): string {
+  if (value == null || typeof value !== "string") return "";
   return value.trim().toLowerCase().replace(/\s+/g, " ");
 }
 
 
-function formatDate(value: string): string {
-  if (!value) return "-";
-  const parsed = new Date(value);
-  if (Number.isNaN(parsed.getTime())) return value;
+function formatDate(value: unknown): string {
+  if (value == null || value === "") return "-";
+  const s = typeof value === "string" ? value : String(value);
+  if (!s.trim()) return "-";
+  const parsed = new Date(s);
+  if (Number.isNaN(parsed.getTime())) return s;
   return parsed.toLocaleString();
 }
 
-function formatProjectDateAdded(iso: string): string {
-  const t = iso?.trim();
+function formatProjectDateAdded(iso: unknown): string {
+  if (iso == null) return "—";
+  const t =
+    typeof iso === "string" ? iso.trim() : String(iso).trim();
   if (!t) return "—";
   const parsed = new Date(t);
   if (Number.isNaN(parsed.getTime())) return t;
@@ -441,10 +451,13 @@ export default function CloudData() {
     }
     const map = new Map<string, CloudProjectDetails["users"]>();
     for (const company of details.companies) {
+      if (company.id == null || String(company.id).trim() === "") continue;
       const target = normalizeCompanyLabel(company.name);
+      if (!target) continue;
       const list = details.users
         .filter((u) => {
-          const raw = u.company?.trim();
+          const raw =
+            typeof u.company === "string" ? u.company.trim() : "";
           if (!raw || raw === "-") return false;
           return normalizeCompanyLabel(raw) === target;
         })

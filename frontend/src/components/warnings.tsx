@@ -315,8 +315,8 @@ function ModelWarningsCombinedChartView({
               No warning history for these models in the selected range.
             </div>
           ) : (
-            <div className="grid w-full grid-cols-1 gap-4 md:min-h-[28rem] md:grid-cols-[minmax(0,1fr)_min(16rem,34vw)] md:items-stretch lg:grid-cols-[minmax(0,1fr)_17rem]">
-              <div className="h-[22rem] min-h-[16rem] md:h-[28rem] md:min-h-[28rem]">
+            <div className="grid w-full min-w-0 grid-cols-1 gap-4 md:min-h-[28rem] md:grid-cols-[minmax(0,1fr)_min(16rem,34vw)] md:items-stretch lg:grid-cols-[minmax(0,1fr)_17rem]">
+              <div className="h-[22rem] min-h-[16rem] min-w-0 md:h-[28rem] md:min-h-[28rem]">
                 <ResponsiveContainer width="100%" height="100%">
                   <LineChart
                     data={rows}
@@ -485,7 +485,7 @@ function ModelWarningsTrendChart({
               No warning history for this model in the selected range.
             </div>
           ) : (
-            <div className="h-80 w-full">
+            <div className="h-80 min-w-0 w-full">
               <ResponsiveContainer width="100%" height="100%">
                 <LineChart
                   data={chartData}
