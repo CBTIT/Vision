@@ -486,12 +486,61 @@ export async function fetchModelSizeHistory(params: {
   return data.points;
 }
 
+export type ModelWarningSummaryItem = {
+  modelId: string;
+  fileName: string;
+  projectName: string;
+  lastWarningCount: number;
+  sessionCount: number;
+};
+
+export type ModelWarningHistoryPoint = {
+  date: string;
+  warningCount: number;
+};
+
+export async function fetchModelWarningsOverview(params?: {
+  from?: string;
+  to?: string;
+}): Promise<{
+  items: ModelWarningSummaryItem[];
+  historiesByModelId: Record<string, ModelWarningHistoryPoint[]>;
+}> {
+  const query: Record<string, string> = {};
+  if (params?.from) query.from = params.from;
+  if (params?.to) query.to = params.to;
+  return apiFetch<{
+    items: ModelWarningSummaryItem[];
+    historiesByModelId: Record<string, ModelWarningHistoryPoint[]>;
+  }>("/api/models/model-warnings", query);
+}
+
+export async function fetchModelWarningsHistory(params: {
+  modelId: string;
+  from?: string;
+  to?: string;
+}): Promise<ModelWarningHistoryPoint[]> {
+  const query: Record<string, string> = {};
+  if (params.from) query.from = params.from;
+  if (params.to) query.to = params.to;
+  const data = await apiFetch<{
+    modelId: string;
+    points: ModelWarningHistoryPoint[];
+  }>(
+    `/api/models/${encodeURIComponent(params.modelId)}/warning-history`,
+    query,
+  );
+  return data.points;
+}
+
 export type CloudProjectListItem = {
   id: string;
   hubId: string;
   hubName: string;
   name: string;
   status: string;
+  /** ISO-like timestamp from APS when present; may be empty. */
+  dateAdded: string;
   sourceType: "bim" | "acc_forma";
   products: string[];
 };
@@ -504,6 +553,8 @@ export type CloudProjectDetails = {
     status: string;
     sourceType: "bim" | "acc_forma";
     products: string[];
+    /** ACC Admin account projects list — `imageUrl` / `thumbnailImageUrl`. */
+    imageUrl: string | null;
   };
   models: Array<{
     id: string;
@@ -517,7 +568,8 @@ export type CloudProjectDetails = {
     id: string;
     name: string;
     email: string;
-    role: string;
+    company: string;
+    accessLevel: string;
     status: string;
   }>;
   companies: Array<{

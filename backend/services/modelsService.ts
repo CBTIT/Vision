@@ -1,3 +1,4 @@
+import type { PipelineStage } from "mongoose";
 import RevitSession from "../models/RevitSession.js";
 import UserMappings from "../models/UserMappings.js";
 
@@ -215,5 +216,228 @@ export const getModelSizeHistory = async (
   return rows.map((row) => ({
     date: row._id,
     maxFileSize: row.maxFileSize,
+  }));
+};
+
+export type ModelWarningSummary = {
+  modelId: string;
+  fileName: string;
+  projectName: string;
+  /** From the most recent session in the range (by dateTime). */
+  lastWarningCount: number;
+  sessionCount: number;
+};
+
+export type ModelWarningHistoryPoint = {
+  date: string;
+  /** Max warning count among sessions for that model on that UTC day. */
+  warningCount: number;
+};
+
+/**
+ * Per-model last recorded warning count (from latest session in range) and
+ * daily maxima for the combined chart — same session scope as All Models.
+ */
+export const getModelWarningsData = async (
+  from?: string,
+  to?: string,
+): Promise<{
+  items: ModelWarningSummary[];
+  historiesByModelId: Record<string, ModelWarningHistoryPoint[]>;
+}> => {
+  const matchStage: Record<string, unknown> = {
+    $or: [
+      { modelId: { $exists: true, $ne: "" } },
+      { fileName: { $exists: true, $ne: "" } },
+    ],
+  };
+
+  if (from || to) {
+    const dateFilter: Record<string, Date> = {};
+    if (from) dateFilter["$gte"] = new Date(from);
+    if (to) {
+      const toDate = new Date(to);
+      toDate.setHours(23, 59, 59, 999);
+      dateFilter["$lte"] = toDate;
+    }
+    matchStage["dateTime"] = dateFilter;
+  }
+
+  const modelKeyExpr = {
+    $cond: [
+      {
+        $and: [{ $ifNull: ["$modelId", false] }, { $ne: ["$modelId", ""] }],
+      },
+      "$modelId",
+      "$fileName",
+    ],
+  };
+
+  type SummaryRow = {
+    _id: string;
+    fileName: string;
+    projectName: string;
+    lastWarningCount: number;
+    sessionCount: number;
+  };
+
+  type DailyRow = {
+    _id: { date: string; modelKey: string };
+    warningCount: number;
+  };
+
+  const baseStages: PipelineStage[] = [{ $match: matchStage }];
+
+  const [summaryRows, dailyRows] = await Promise.all([
+    RevitSession.aggregate<SummaryRow>([
+      ...baseStages,
+      { $sort: { dateTime: 1 } },
+      {
+        $group: {
+          _id: modelKeyExpr,
+          fileName: { $last: "$fileName" },
+          projectName: {
+            $last: {
+              $cond: [
+                {
+                  $and: [
+                    { $ifNull: ["$cloudProjectName", false] },
+                    { $ne: ["$cloudProjectName", ""] },
+                  ],
+                },
+                "$cloudProjectName",
+                "$projectId",
+              ],
+            },
+          },
+          lastWarningCount: { $last: { $ifNull: ["$warningCount", 0] } },
+          sessionCount: { $sum: 1 },
+        },
+      },
+      { $sort: { lastWarningCount: -1, _id: 1 } },
+    ]),
+    RevitSession.aggregate<DailyRow>([
+      ...baseStages,
+      {
+        $addFields: {
+          modelKey: modelKeyExpr,
+        },
+      },
+      {
+        $match: {
+          modelKey: { $ne: "" },
+        },
+      },
+      {
+        $group: {
+          _id: {
+            date: {
+              $dateToString: {
+                format: "%Y-%m-%d",
+                date: "$dateTime",
+                timezone: "UTC",
+              },
+            },
+            modelKey: "$modelKey",
+          },
+          warningCount: {
+            $max: { $ifNull: ["$warningCount", 0] },
+          },
+        },
+      },
+      { $sort: { "_id.date": 1, "_id.modelKey": 1 } },
+    ]),
+  ]);
+
+  const items: ModelWarningSummary[] = summaryRows.map((row) => ({
+    modelId: row._id,
+    fileName: row.fileName || row._id,
+    projectName: row.projectName || "-",
+    lastWarningCount: row.lastWarningCount,
+    sessionCount: row.sessionCount,
+  }));
+
+  const historiesByModelId: Record<string, ModelWarningHistoryPoint[]> = {};
+  for (const row of dailyRows) {
+    const key = row._id.modelKey;
+    if (!historiesByModelId[key]) {
+      historiesByModelId[key] = [];
+    }
+    historiesByModelId[key].push({
+      date: row._id.date,
+      warningCount: row.warningCount,
+    });
+  }
+
+  return { items, historiesByModelId };
+};
+
+/**
+ * Daily max warning counts for one model (same identity rules as size history).
+ */
+export const getModelWarningsTimeSeries = async (
+  modelId: string,
+  from?: string,
+  to?: string,
+): Promise<ModelWarningHistoryPoint[]> => {
+  const selectedIdentifier = modelId.trim();
+  const normalizedModelId = normalizeModelId(modelId);
+  if (!selectedIdentifier || !normalizedModelId) {
+    return [];
+  }
+
+  const matchStage: Record<string, unknown> = {
+    $or: [
+      {
+        modelId: {
+          $regex: `^\\{?${escapeRegex(normalizedModelId)}\\}?$`,
+          $options: "i",
+        },
+      },
+      {
+        fileName: {
+          $regex: `^${escapeRegex(selectedIdentifier)}$`,
+          $options: "i",
+        },
+      },
+    ],
+  };
+
+  if (from || to) {
+    const dateFilter: Record<string, Date> = {};
+    if (from) {
+      dateFilter["$gte"] = new Date(from);
+    }
+    if (to) {
+      const endExclusive = new Date(to);
+      endExclusive.setDate(endExclusive.getDate() + 1);
+      dateFilter["$lt"] = endExclusive;
+    }
+    matchStage["dateTime"] = dateFilter;
+  }
+
+  const rows = await RevitSession.aggregate<{
+    _id: string;
+    warningCount: number;
+  }>([
+    { $match: matchStage },
+    {
+      $group: {
+        _id: {
+          $dateToString: {
+            format: "%Y-%m-%d",
+            date: "$dateTime",
+            timezone: "UTC",
+          },
+        },
+        warningCount: { $max: { $ifNull: ["$warningCount", 0] } },
+      },
+    },
+    { $sort: { _id: 1 } },
+  ]);
+
+  return rows.map((row) => ({
+    date: row._id,
+    warningCount: row.warningCount,
   }));
 };

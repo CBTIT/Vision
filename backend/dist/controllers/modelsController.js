@@ -1,4 +1,4 @@
-import { getModelsSummary, getModelSizeHistory, } from "../services/modelsService.js";
+import { getModelsSummary, getModelSizeHistory, getProjectWarningsData, } from "../services/modelsService.js";
 export const listModels = async (req, res) => {
     try {
         const from = typeof req.query.from === "string" ? req.query.from : undefined;
@@ -21,6 +21,18 @@ export const getModelHistory = async (req, res) => {
     }
     catch (err) {
         console.error("getModelHistory error:", err);
+        res.status(500).json({ error: "Internal server error" });
+    }
+};
+export const getProjectWarnings = async (req, res) => {
+    try {
+        const from = typeof req.query.from === "string" ? req.query.from : undefined;
+        const to = typeof req.query.to === "string" ? req.query.to : undefined;
+        const data = await getProjectWarningsData(from, to);
+        res.json(data);
+    }
+    catch (err) {
+        console.error("getProjectWarnings error:", err);
         res.status(500).json({ error: "Internal server error" });
     }
 };

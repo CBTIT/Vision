@@ -1,8 +1,15 @@
 import { Router } from "express";
-import { getModelHistory, listModels } from "../controllers/modelsController.js";
+import {
+  getModelHistory,
+  getModelWarningsHistory,
+  getModelWarningsOverview,
+  listModels,
+} from "../controllers/modelsController.js";
 
 const router = Router();
 
+router.get("/model-warnings", getModelWarningsOverview);
+router.get("/:modelId/warning-history", getModelWarningsHistory);
 router.get("/:modelId/size-history", getModelHistory);
 router.get("/", listModels);
 

@@ -162,3 +162,94 @@ export const getModelSizeHistory = async (modelId, from, to) => {
         maxFileSize: row.maxFileSize,
     }));
 };
+/** Resolved project bucket: cloud project name when present, else trimmed project id. */
+const projectKeyExpr = {
+    $let: {
+        vars: {
+            c: { $trim: { input: { $ifNull: ["$cloudProjectName", ""] } } },
+            p: { $trim: { input: { $ifNull: ["$projectId", ""] } } },
+        },
+        in: {
+            $cond: [{ $gt: [{ $strLenCP: "$$c" }, 0] }, "$$c", "$$p"],
+        },
+    },
+};
+function buildSessionDateMatch(from, to) {
+    if (!from && !to)
+        return {};
+    const dateFilter = {};
+    if (from)
+        dateFilter["$gte"] = new Date(from);
+    if (to) {
+        const toDate = new Date(to);
+        toDate.setHours(23, 59, 59, 999);
+        dateFilter["$lte"] = toDate;
+    }
+    return { dateTime: dateFilter };
+}
+/**
+ * Per-project totals (sum of session warningCount) and daily sums for charting,
+ * scoped to the same date range as other Vision lists.
+ */
+export const getProjectWarningsData = async (from, to) => {
+    const dateMatch = buildSessionDateMatch(from, to);
+    const baseStages = [
+        ...(Object.keys(dateMatch).length ? [{ $match: dateMatch }] : []),
+        { $addFields: { projectKey: projectKeyExpr } },
+        {
+            $match: {
+                projectKey: { $ne: "" },
+            },
+        },
+    ];
+    const [summaryRows, dailyRows] = await Promise.all([
+        RevitSession.aggregate([
+            ...baseStages,
+            {
+                $group: {
+                    _id: "$projectKey",
+                    totalWarnings: { $sum: { $ifNull: ["$warningCount", 0] } },
+                    sessionCount: { $sum: 1 },
+                },
+            },
+            { $sort: { totalWarnings: -1, _id: 1 } },
+        ]),
+        RevitSession.aggregate([
+            ...baseStages,
+            {
+                $group: {
+                    _id: {
+                        date: {
+                            $dateToString: {
+                                format: "%Y-%m-%d",
+                                date: "$dateTime",
+                                timezone: "UTC",
+                            },
+                        },
+                        projectKey: "$projectKey",
+                    },
+                    totalWarnings: { $sum: { $ifNull: ["$warningCount", 0] } },
+                },
+            },
+            { $sort: { "_id.date": 1, "_id.projectKey": 1 } },
+        ]),
+    ]);
+    const items = summaryRows.map((row) => ({
+        projectKey: row._id,
+        projectName: row._id,
+        totalWarnings: row.totalWarnings,
+        sessionCount: row.sessionCount,
+    }));
+    const historiesByProjectKey = {};
+    for (const row of dailyRows) {
+        const key = row._id.projectKey;
+        if (!historiesByProjectKey[key]) {
+            historiesByProjectKey[key] = [];
+        }
+        historiesByProjectKey[key].push({
+            date: row._id.date,
+            totalWarnings: row.totalWarnings,
+        });
+    }
+    return { items, historiesByProjectKey };
+};

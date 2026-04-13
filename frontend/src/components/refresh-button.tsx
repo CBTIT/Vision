@@ -7,13 +7,19 @@ const INTERVAL_SECONDS = 60;
 
 interface RefreshButtonProps {
   onRefresh: () => void;
+  /** When false, only a click triggers refresh (no periodic refresh). Defaults to true. */
+  autoRefresh?: boolean;
 }
 
-export function RefreshButton({ onRefresh }: RefreshButtonProps) {
+export function RefreshButton({
+  onRefresh,
+  autoRefresh = true,
+}: RefreshButtonProps) {
   const [countdown, setCountdown] = useState(INTERVAL_SECONDS);
   const intervalRef = useRef<ReturnType<typeof setInterval> | null>(null);
 
   const startInterval = useCallback(() => {
+    if (!autoRefresh) return;
     if (intervalRef.current) clearInterval(intervalRef.current);
     setCountdown(INTERVAL_SECONDS);
     intervalRef.current = setInterval(() => {
@@ -25,18 +31,19 @@ export function RefreshButton({ onRefresh }: RefreshButtonProps) {
         return prev - 1;
       });
     }, 1000);
-  }, [onRefresh]);
+  }, [autoRefresh, onRefresh]);
 
   useEffect(() => {
+    if (!autoRefresh) return;
     startInterval();
     return () => {
       if (intervalRef.current) clearInterval(intervalRef.current);
     };
-  }, [startInterval]);
+  }, [autoRefresh, startInterval]);
 
   function handleClick() {
     onRefresh();
-    startInterval();
+    if (autoRefresh) startInterval();
   }
 
   return (
@@ -47,7 +54,9 @@ export function RefreshButton({ onRefresh }: RefreshButtonProps) {
       className="gap-1.5 text-muted-foreground"
     >
       <RotateCw className="size-3.5" />
-      <span className="tabular-nums text-xs">{countdown}s</span>
+      {autoRefresh ? (
+        <span className="tabular-nums text-xs">{countdown}s</span>
+      ) : null}
     </Button>
   );
 }

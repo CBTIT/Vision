@@ -54,6 +54,10 @@ const data = {
       title: "Syncs",
       url: "/syncs",
     },
+    {
+      title: "Warnings",
+      url: "/warnings",
+    },
   ],
 };
 
