@@ -74,6 +74,12 @@ function isCrashSession(item: SessionListItem | null): boolean {
   return false;
 }
 
+function isActiveSession(item: SessionListItem | null): boolean {
+  if (!item) return false;
+  const ct = item.closingTime;
+  return ct === "" || ct === null || ct === undefined;
+}
+
 function buildPageTokens(currentPage: number, totalPages: number): PageToken[] {
   if (totalPages <= 7) {
     return Array.from({ length: totalPages }, (_, index) => index + 1);
@@ -314,15 +320,14 @@ function SessionCard({
   const syncTimeline = item.syncTimeline ?? [];
   const syncCount = item.syncCount ?? syncTimeline.length;
   const crash = isCrashSession(item);
+  const active = !crash && isActiveSession(item);
+
   const averageSyncGapLabel = useMemo(() => {
     if (syncCount < 2) return null;
-
     const gaps = syncTimeline
       .map((entry) => entry.gapMinutesFromPrevious)
       .filter((gap): gap is number => typeof gap === "number" && gap >= 0);
-
     if (gaps.length === 0) return null;
-
     const average = gaps.reduce((sum, gap) => sum + gap, 0) / gaps.length;
     return `${average.toFixed(1)} min`;
   }, [syncCount, syncTimeline]);
@@ -331,79 +336,99 @@ function SessionCard({
     <Card
       className={cn(
         "w-full",
-        crash ? CLICKABLE_CARD_HOVER_ROSE : CLICKABLE_CARD_HOVER,
         crash
-          ? "border-rose-300 bg-rose-50/60 hover:bg-rose-100/60 dark:border-rose-800 dark:bg-rose-950/40 dark:hover:bg-rose-950/60"
-          : "hover:bg-muted/30",
+          ? cn(CLICKABLE_CARD_HOVER_ROSE, "border-rose-300 bg-rose-50/60 hover:bg-rose-100/60 dark:border-rose-800 dark:bg-rose-950/40 dark:hover:bg-rose-950/60")
+          : active
+            ? cn(CLICKABLE_CARD_HOVER, "border-emerald-300 bg-emerald-50/50 hover:bg-emerald-100/50 dark:border-emerald-700 dark:bg-emerald-950/30 dark:hover:bg-emerald-950/50")
+            : cn(CLICKABLE_CARD_HOVER, "hover:bg-muted/30"),
       )}
       onClick={onClick}
     >
-      <CardContent className="py-4">
-        <div className="grid gap-3 md:grid-cols-4">
-          <div>
-            <p className="text-xs text-muted-foreground">Project</p>
-            <p className="font-medium truncate">
-              {item.cloudProjectName || item.projectId || "Unknown project"}
-            </p>
+      <CardContent className="py-3.5 px-4">
+        {/* status badge — sits above the grid, doesn't affect column alignment */}
+        {(active || crash) && (
+          <div className="mb-2">
+            <span
+              className={cn(
+                "inline-flex items-center rounded-full px-2 py-0.5 text-[11px] font-semibold uppercase tracking-wide",
+                crash
+                  ? "border border-rose-300 bg-rose-100 text-rose-700 dark:border-rose-700 dark:bg-rose-950/60 dark:text-rose-400"
+                  : "border border-emerald-300 bg-emerald-100 text-emerald-700 dark:border-emerald-700 dark:bg-emerald-950/60 dark:text-emerald-400",
+              )}
+            >
+              {crash ? "Crash" : "Live"}
+            </span>
           </div>
-          <div>
-            <p className="text-xs text-muted-foreground">Model</p>
-            <p className="font-medium truncate">
-              {item.fileName || item.modelId || "Unknown model"}
-            </p>
-          </div>
-          <div>
-            <p className="text-xs text-muted-foreground">User</p>
-            <p className="font-medium truncate">
-              {item.fullName || item.autodeskUserName || "Unknown user"}
-            </p>
-            {item.fullName && item.autodeskUserName && (
-              <p className="text-xs text-muted-foreground truncate">
-                @{item.autodeskUserName}
+        )}
+
+        <div className="flex items-start gap-3 min-w-0">
+          {/* main grid */}
+          <div className="flex-1 grid gap-x-6 gap-y-1 grid-cols-2 sm:grid-cols-4 min-w-0">
+            <div className="min-w-0">
+              <p className="text-xs text-muted-foreground">Project</p>
+              <p className="text-sm font-medium truncate">
+                {item.cloudProjectName || item.projectId || "—"}
               </p>
+            </div>
+            <div className="min-w-0">
+              <p className="text-xs text-muted-foreground">Model</p>
+              <p className="text-sm font-medium truncate">
+                {item.fileName || item.modelId || "—"}
+              </p>
+            </div>
+            <div className="min-w-0">
+              <p className="text-xs text-muted-foreground">User</p>
+              <p className="text-sm font-medium truncate">
+                {item.fullName || item.autodeskUserName || "—"}
+              </p>
+              {item.fullName && item.autodeskUserName && (
+                <p className="text-xs text-muted-foreground truncate">
+                  @{item.autodeskUserName}
+                </p>
+              )}
+            </div>
+            <div className="min-w-0">
+              <p className="text-xs text-muted-foreground">Date</p>
+              <p className="text-sm font-medium">
+                {item.dateTime ? formatDateTime(item.dateTime) : "—"}
+              </p>
+            </div>
+          </div>
+
+          {/* syncs pill */}
+          <div className="shrink-0 flex items-center mt-0.5">
+            {syncCount > 0 ? (
+              <button
+                type="button"
+                onClick={(event) => {
+                  event.stopPropagation();
+                  onToggleSyncs();
+                }}
+                className={cn(
+                  "inline-flex items-center gap-1 rounded-full border px-2.5 py-1 text-xs font-medium transition-colors",
+                  syncsExpanded
+                    ? "border-violet-300 bg-violet-100 text-violet-700 dark:border-violet-700 dark:bg-violet-950/60 dark:text-violet-400"
+                    : "border-border bg-muted/30 text-muted-foreground hover:border-violet-300 hover:text-violet-700",
+                )}
+              >
+                {syncCount} sync{syncCount !== 1 ? "s" : ""}
+              </button>
+            ) : (
+              <span className="text-xs text-muted-foreground">0 syncs</span>
             )}
           </div>
-          <div>
-            <p className="text-xs text-muted-foreground">Date</p>
-            <p className="font-medium">
-              {item.dateTime ? formatDateTime(item.dateTime) : "-"}
-            </p>
+        </div>
+
+        {syncCount > 0 && syncsExpanded && (
+          <div className="mt-3 rounded-lg border bg-background p-3">
+            {averageSyncGapLabel && (
+              <p className="mb-2 text-xs text-muted-foreground">
+                Avg sync gap: {averageSyncGapLabel}
+              </p>
+            )}
+            <SyncTimeline timeline={syncTimeline} compact />
           </div>
-        </div>
-
-        <div className="mt-4 border-t pt-3">
-          {averageSyncGapLabel && (
-            <p className="mb-2 text-xs text-muted-foreground">
-              Average Sync Gap: {averageSyncGapLabel}
-            </p>
-          )}
-
-          {syncCount > 0 ? (
-            <button
-              type="button"
-              onClick={(event) => {
-                event.stopPropagation();
-                onToggleSyncs();
-              }}
-              className="flex items-center gap-2 text-sm font-medium text-foreground hover:underline"
-            >
-              Syncs: {syncCount}
-              <span className="text-xs text-muted-foreground">
-                ({syncsExpanded ? "Hide details" : "Show details"})
-              </span>
-            </button>
-          ) : (
-            <p className="text-sm font-medium text-muted-foreground">
-              Syncs: 0
-            </p>
-          )}
-
-          {syncCount > 0 && syncsExpanded && (
-            <div className="mt-3 rounded-lg border bg-background p-3">
-              <SyncTimeline timeline={syncTimeline} compact />
-            </div>
-          )}
-        </div>
+        )}
       </CardContent>
     </Card>
   );
@@ -449,7 +474,9 @@ function SyncCard({
           <div>
             <p className="text-xs text-muted-foreground">Date</p>
             <p className="font-medium">
-              {item.date ? formatDateTime(item.date) : "-"}
+              {item.dateTime || item.date
+                ? formatDateTime((item.dateTime ?? item.date) as string)
+                : "-"}
             </p>
           </div>
         </div>
@@ -486,7 +513,7 @@ export default function SessionsSyncsPage({ mode }: { mode: Mode }) {
   const [expandedSyncsBySessionId, setExpandedSyncsBySessionId] = useState<
     Record<string, boolean>
   >({});
-  const [sessionScope, setSessionScope] = useState<"all" | "crash">("all");
+  const [sessionScope, setSessionScope] = useState<"all" | "crash" | "live">("all");
   const [filterProject, setFilterProject] = useState<"all" | string>("all");
   const [filterModel, setFilterModel] = useState<"all" | string>("all");
   const [filterUser, setFilterUser] = useState<"all" | string>("all");
@@ -832,6 +859,7 @@ export default function SessionsSyncsPage({ mode }: { mode: Mode }) {
       "fileName",
       "modelId",
       "filePath",
+      "dateTime",
       "date",
       "syncStartTime",
       "syncEndTime",
@@ -869,6 +897,7 @@ export default function SessionsSyncsPage({ mode }: { mode: Mode }) {
             page,
             limit,
             crashOnly: sessionScope === "crash" ? true : undefined,
+            liveOnly: sessionScope === "live" ? true : undefined,
             cloudProjectName:
               filterProject === "all" ? undefined : filterProject,
             modelId: filterModel === "all" ? undefined : filterModel,
@@ -965,6 +994,7 @@ export default function SessionsSyncsPage({ mode }: { mode: Mode }) {
                   {data.totalPages}
                 </p>
                 {mode === "sessions" && (
+                  <>
                   <div className="flex shrink-0 items-center gap-2">
                     <span
                       id="sessions-crash-filter-label"
@@ -1002,6 +1032,44 @@ export default function SessionsSyncsPage({ mode }: { mode: Mode }) {
                       />
                     </button>
                   </div>
+                  <div className="flex shrink-0 items-center gap-2">
+                    <span
+                      id="sessions-live-filter-label"
+                      className="text-xs font-medium text-muted-foreground whitespace-nowrap"
+                    >
+                      Live only
+                    </span>
+                    <button
+                      type="button"
+                      id="sessions-live-filter"
+                      role="switch"
+                      aria-checked={sessionScope === "live"}
+                      aria-labelledby="sessions-live-filter-label"
+                      onClick={() =>
+                        setSessionScope((s) =>
+                          s === "live" ? "all" : "live",
+                        )
+                      }
+                      className={cn(
+                        "relative inline-flex h-6 w-11 shrink-0 cursor-pointer items-center rounded-full p-0.5 transition-colors",
+                        "focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 focus-visible:ring-offset-background focus-visible:outline-none",
+                        sessionScope === "live"
+                          ? "bg-emerald-500"
+                          : "bg-input dark:bg-input/80",
+                      )}
+                    >
+                      <span
+                        aria-hidden
+                        className={cn(
+                          "pointer-events-none block size-5 rounded-full bg-background shadow-sm ring-0 transition-transform duration-200 ease-in-out",
+                          sessionScope === "live"
+                            ? "translate-x-5"
+                            : "translate-x-0",
+                        )}
+                      />
+                    </button>
+                  </div>
+                  </>
                 )}
               </div>
               {mode === "sessions" && (

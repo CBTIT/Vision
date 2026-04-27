@@ -12,6 +12,7 @@ import usersRouter from "./routes/users.js";
 import modelsRouter from "./routes/models.js";
 import cloudRouter from "./routes/cloud.js";
 import authRouter from "./routes/auth.js";
+import autodeskRouter from "./routes/autodesk.js";
 
 const app = express();
 const PORT = process.env.PORT || 3000;
@@ -50,6 +51,7 @@ app.use("/api/plugins", pluginRouter);
 app.use("/api/users", usersRouter);
 app.use("/api/models", modelsRouter);
 app.use("/api/cloud", cloudRouter);
+app.use("/api/autodesk", autodeskRouter);
 
 const startServer = async () => {
   try {

@@ -680,8 +680,8 @@ export default function ActiveUsers() {
       ) : (
         <div className="grid grid-cols-1 gap-3 md:grid-cols-2 xl:grid-cols-3 2xl:grid-cols-4">
           {filteredItems.map((item) => {
-            const displayName = item.fullName?.trim() || item.user;
-            const updatedAt = formatDateTime(item.ts);
+            const displayName = item.fullName?.trim() || item.autodeskUserName;
+            const updatedAt = formatDateTime(item.dateTime);
             const activeSessionId = getActiveSessionId(item);
             const activeModelId =
               typeof item.activeDocId === "string"
@@ -700,7 +700,7 @@ export default function ActiveUsers() {
                         {displayName}
                       </CardTitle>
                       <p className="mt-1 truncate text-xs text-muted-foreground">
-                        @{item.user}
+                        @{item.autodeskUserName}
                       </p>
                     </div>
                     <span className="inline-flex shrink-0 rounded-full border border-emerald-300 bg-emerald-50 px-2 py-0.5 text-[11px] font-semibold text-emerald-700 dark:border-emerald-700 dark:bg-emerald-950/60 dark:text-emerald-400">

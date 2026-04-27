@@ -50,7 +50,6 @@ export const getUsersSummary = async (): Promise<UserSummary[]> => {
     pluginCounts,
     pluginVersions,
     mappings,
-    pluginNames,
   ] = await Promise.all([
     RevitSession.aggregate<{
       _id: string;
@@ -138,12 +137,6 @@ export const getUsersSummary = async (): Promise<UserSummary[]> => {
     UserMappings.find({ autodeskUserName: { $exists: true, $ne: "" } })
       .select({ autodeskUserName: 1, fullName: 1 })
       .lean(),
-    PluginUse.find({
-      autodeskUserName: { $exists: true, $ne: "" },
-      fullName: { $exists: true, $ne: "" },
-    })
-      .select({ autodeskUserName: 1, fullName: 1 })
-      .lean(),
   ]);
 
   const usernames = new Set<string>([
@@ -193,11 +186,6 @@ export const getUsersSummary = async (): Promise<UserSummary[]> => {
   );
 
   const fullNameMap = new Map<string, string>();
-  for (const row of pluginNames) {
-    if (!fullNameMap.has(row.autodeskUserName) && row.fullName) {
-      fullNameMap.set(row.autodeskUserName, row.fullName);
-    }
-  }
   for (const row of mappings) {
     if (row.fullName) {
       fullNameMap.set(row.autodeskUserName, row.fullName);

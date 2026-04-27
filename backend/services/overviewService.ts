@@ -75,8 +75,13 @@ const getSyncDailyCounts = async (
 ): Promise<Map<string, number>> => {
   const rows = await RevitSyncEvent.aggregate<{ _id: string; count: number }>([
     {
+      $addFields: {
+        _syncDate: { $ifNull: ["$dateTime", "$date"] },
+      },
+    },
+    {
       $match: {
-        date: {
+        _syncDate: {
           $gte: startInclusive,
           $lt: endExclusive,
         },
@@ -87,7 +92,7 @@ const getSyncDailyCounts = async (
         _id: {
           $dateToString: {
             format: "%Y-%m-%d",
-            date: "$date",
+            date: "$_syncDate",
             timezone: "UTC",
           },
         },
@@ -143,20 +148,26 @@ export const getOverviewDateBounds = async (): Promise<DateBoundsResult> => {
       .sort({ dateTime: -1 })
       .select({ dateTime: 1 })
       .lean(),
-    RevitSyncEvent.findOne({ date: { $exists: true } })
-      .sort({ date: 1 })
-      .select({ date: 1 })
+    RevitSyncEvent.findOne({ $or: [{ dateTime: { $exists: true } }, { date: { $exists: true } }] })
+      .sort({ dateTime: 1, date: 1 })
+      .select({ dateTime: 1, date: 1 })
       .lean(),
-    RevitSyncEvent.findOne({ date: { $exists: true } })
-      .sort({ date: -1 })
-      .select({ date: 1 })
+    RevitSyncEvent.findOne({ $or: [{ dateTime: { $exists: true } }, { date: { $exists: true } }] })
+      .sort({ dateTime: -1, date: -1 })
+      .select({ dateTime: 1, date: 1 })
       .lean(),
   ]);
 
-  const starts = [sessionFirst?.dateTime, syncFirst?.date]
+  const resolveSyncBound = (doc: Record<string, unknown> | null): Date | null => {
+    if (!doc) return null;
+    const raw = (doc.dateTime ?? (doc as any).date) as unknown;
+    return raw instanceof Date && !Number.isNaN((raw as Date).getTime()) ? raw : null;
+  };
+
+  const starts = [sessionFirst?.dateTime, resolveSyncBound(syncFirst as any)]
     .filter((value): value is Date => value instanceof Date)
     .map((value) => value.getTime());
-  const ends = [sessionLast?.dateTime, syncLast?.date]
+  const ends = [sessionLast?.dateTime, resolveSyncBound(syncLast as any)]
     .filter((value): value is Date => value instanceof Date)
     .map((value) => value.getTime());
 

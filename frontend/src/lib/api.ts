@@ -27,6 +27,9 @@ export type SessionListItem = {
   autodeskUserName?: string;
   fullName?: string;
   revitVersion?: string;
+  closingTime?: string | null;
+  sessionDuration?: number | string | null;
+  crashStatus?: boolean | number | string;
   syncCount?: number;
   syncTimeline?: Array<{
     syncId: string;
@@ -38,7 +41,8 @@ export type SessionListItem = {
 
 export type SyncListItem = {
   _id: string;
-  date: string;
+  dateTime?: string;
+  date?: string;
   revitSessionId?: string;
   projectId?: string;
   cloudProjectName?: string;
@@ -52,11 +56,16 @@ export type SyncListItem = {
 
 export type PluginUseItem = {
   _id: string;
+  dateTime?: string;
   autodeskUserName?: string;
   fullName?: string;
   email?: string;
-  plugin_name?: string;
-  project_name?: string;
+  pluginName?: string;
+  fileName?: string;
+  cloudProjectName?: string;
+  modelId?: string;
+  projectId?: string;
+  notes?: string;
   [key: string]: unknown;
 };
 
@@ -76,7 +85,7 @@ export type UserSummaryItem = {
 
 export type ActiveUserItem = {
   _id: string;
-  user: string;
+  autodeskUserName: string;
   fullName?: string;
   machine: string;
   revitVersion: string;
@@ -91,7 +100,7 @@ export type ActiveUserItem = {
   activeProjectName?: string | null;
   /** Project keys from each open doc (same rules as Active Projects), not only the UI-active project */
   projectKeysFromOpenDocs?: string[];
-  ts: string;
+  dateTime: string;
 };
 
 async function apiFetch<T>(
@@ -356,6 +365,8 @@ export async function fetchSessionsList(params: {
   cloudProjectName?: string;
   /** Only sessions with crash flag set */
   crashOnly?: boolean;
+  /** Only sessions still open (no closing time) */
+  liveOnly?: boolean;
 }): Promise<PaginatedListResponse<SessionListItem>> {
   const query: Record<string, string> = {
     page: String(params.page),
@@ -377,6 +388,9 @@ export async function fetchSessionsList(params: {
   }
   if (params.crashOnly) {
     query.crashOnly = "true";
+  }
+  if (params.liveOnly) {
+    query.liveOnly = "true";
   }
   return apiFetch<PaginatedListResponse<SessionListItem>>(
     "/api/sessions",
@@ -580,6 +594,34 @@ export type CloudProjectDetails = {
   }>;
   warnings: string[];
 };
+
+// ── Autodesk 3-legged OAuth + AEC Data Model GraphQL ──────────────────────────
+
+export async function fetchAutodeskAuthUrl(): Promise<string> {
+  const data = await apiFetch<{ url: string }>("/api/autodesk/auth-url");
+  return data.url;
+}
+
+export async function fetchAutodeskStatus(): Promise<{ connected: boolean }> {
+  return apiFetch<{ connected: boolean }>("/api/autodesk/status");
+}
+
+export async function autodeskGraphQL<T = unknown>(
+  query: string,
+  variables?: Record<string, unknown>,
+): Promise<{ data: T; errors?: Array<{ message: string }> }> {
+  return apiPost<{ data: T; errors?: Array<{ message: string }> }>(
+    "/api/autodesk/graphql",
+    variables ? { query, variables } : { query },
+  );
+}
+
+export async function disconnectAutodesk(): Promise<void> {
+  await fetch(`${BASE_URL}/api/autodesk/disconnect`, {
+    method: "DELETE",
+    credentials: "include",
+  });
+}
 
 export async function fetchCloudProjects(): Promise<{
   bim: CloudProjectListItem[];

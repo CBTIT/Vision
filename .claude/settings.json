@@ -1,0 +1,7 @@
+{
+  "permissions": {
+    "allow": [
+      "Read(//c/c/Users/verma/Desktop/Jarvis/03_Code/Vision/**)"
+    ]
+  }
+}

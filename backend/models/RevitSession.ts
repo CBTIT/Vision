@@ -34,7 +34,7 @@ const RevitSessionSchema = new Schema(
     deviceFreeSpace: { type: Number, default: 0 },
     warningCount: { type: Number, default: 0 },
 
-    openWorksetCount: { type: String, default: "" },
+    openWorksetCount: { type: Number, default: 0 },
     openWorksetNames: [{ type: String }],
 
     missingReferences: [{ type: String }],

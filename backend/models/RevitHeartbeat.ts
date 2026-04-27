@@ -14,7 +14,7 @@ const openDocsSchema = new mongoose.Schema({
 });
 
 const revitHeartbeatSchema = new mongoose.Schema({
-  user: {
+  autodeskUserName: {
     type: String,
     required: true,
     trim: true,
@@ -59,7 +59,7 @@ const revitHeartbeatSchema = new mongoose.Schema({
     trim: true,
     index: true,
   },
-  ts: {
+  dateTime: {
     type: Date,
     required: true,
     index: true,

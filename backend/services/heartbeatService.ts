@@ -51,7 +51,7 @@ async function getLatestSessionUsername(
 async function cleanupStaleHeartbeats(): Promise<void> {
   const retentionCutoff = getTimeCutoff(HEARTBEAT_RETENTION_SECONDS);
   await RevitHeartbeat.deleteMany({
-    ts: { $lt: retentionCutoff },
+    dateTime: { $lt: retentionCutoff },
   });
 }
 
@@ -60,10 +60,10 @@ export const getActiveUsers = async () => {
 
   const cutoff = getTimeCutoff(ACTIVE_HEARTBEAT_SECONDS);
   const active = await RevitHeartbeat.find({
-    ts: { $gt: cutoff },
+    dateTime: { $gt: cutoff },
     openDocs: { $ne: [] },
   })
-    .sort({ ts: -1 })
+    .sort({ dateTime: -1 })
     .lean();
 
   const resolvedUsernames = await Promise.all(
@@ -81,7 +81,7 @@ export const getActiveUsers = async () => {
         return sessionUsername;
       }
 
-      return typeof item.user === "string" ? item.user.trim() : "";
+      return typeof item.autodeskUserName === "string" ? item.autodeskUserName.trim() : "";
     }),
   );
 
@@ -134,7 +134,7 @@ export const getActiveUsersCount = async () => {
 
   const cutoff = getTimeCutoff(ACTIVE_HEARTBEAT_SECONDS);
   const activeCount = await RevitHeartbeat.countDocuments({
-    ts: { $gte: cutoff },
+    dateTime: { $gte: cutoff },
     openDocs: { $ne: [] },
   });
   return activeCount;
@@ -362,10 +362,10 @@ export const getActiveProjects = async (): Promise<ActiveProjectSummary[]> => {
 
   const cutoff = getTimeCutoff(ACTIVE_HEARTBEAT_SECONDS);
   const active = await RevitHeartbeat.find({
-    ts: { $gt: cutoff },
+    dateTime: { $gt: cutoff },
     openDocs: { $ne: [] },
   })
-    .select({ user: 1, activeProjectName: 1, openDocs: 1 })
+    .select({ autodeskUserName: 1, activeProjectName: 1, openDocs: 1 })
     .lean();
 
   const openDocSessionIds = collectOpenDocSessionIds(active);
@@ -381,7 +381,7 @@ export const getActiveProjects = async (): Promise<ActiveProjectSummary[]> => {
   const byProject = new Map<string, ProjectAgg>();
 
   for (const item of active) {
-    const u = typeof item.user === "string" ? item.user.trim() : "";
+    const u = typeof item.autodeskUserName === "string" ? item.autodeskUserName.trim() : "";
     if (!u || !Array.isArray(item.openDocs)) continue;
 
     const seenInThisHeartbeat = new Set<string>();
@@ -514,11 +514,11 @@ export const getActiveProjectUsers = async (
 
   const cutoff = getTimeCutoff(ACTIVE_HEARTBEAT_SECONDS);
   const active = await RevitHeartbeat.find({
-    ts: { $gt: cutoff },
+    dateTime: { $gt: cutoff },
     openDocs: { $ne: [] },
   })
     .select({
-      user: 1,
+      autodeskUserName: 1,
       machine: 1,
       revitVersion: 1,
       activeProjectName: 1,
@@ -537,7 +537,7 @@ export const getActiveProjectUsers = async (
   const usernames = Array.from(
     new Set(
       forProject
-        .map((h) => (typeof h.user === "string" ? h.user.trim() : ""))
+        .map((h) => (typeof h.autodeskUserName === "string" ? h.autodeskUserName.trim() : ""))
         .filter(Boolean),
     ),
   );
@@ -561,7 +561,7 @@ export const getActiveProjectUsers = async (
     if (!picked) continue;
 
     const autodeskUserName =
-      typeof hb.user === "string" ? hb.user.trim() : "";
+      typeof hb.autodeskUserName === "string" ? hb.autodeskUserName.trim() : "";
     const machine = typeof hb.machine === "string" ? hb.machine.trim() : "";
     const revitVersion =
       typeof hb.revitVersion === "string" ? hb.revitVersion.trim() : "";

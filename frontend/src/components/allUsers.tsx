@@ -1332,17 +1332,17 @@ export default function AllUsers() {
                                       }}
                                     >
                                       <td className="px-3 py-2 whitespace-nowrap">
-                                        {sync.date
+                                        {sync.dateTime || sync.date
                                           ? format(
-                                              new Date(sync.date),
+                                              new Date((sync.dateTime ?? sync.date) as string),
                                               "MM/dd/yy",
                                             )
                                           : "-"}
                                       </td>
                                       <td className="px-3 py-2 whitespace-nowrap">
-                                        {sync.date
+                                        {sync.dateTime || sync.date
                                           ? format(
-                                              new Date(sync.date),
+                                              new Date((sync.dateTime ?? sync.date) as string),
                                               "h:mm a",
                                             )
                                           : "-"}

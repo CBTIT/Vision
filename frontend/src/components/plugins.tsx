@@ -79,20 +79,22 @@ function PluginCard({
       <CardContent className="py-4">
         <div className="grid gap-3 md:grid-cols-2 xl:grid-cols-4">
           <div>
-            <p className="text-xs text-muted-foreground">Full Name</p>
-            <p className="font-medium truncate">{item.fullName || "-"}</p>
+            <p className="text-xs text-muted-foreground">User</p>
+            <p className="font-medium truncate">{item.fullName || item.autodeskUserName || "-"}</p>
           </div>
           <div>
             <p className="text-xs text-muted-foreground">Plugin Name</p>
-            <p className="font-medium truncate">{item.plugin_name || "-"}</p>
+            <p className="font-medium truncate">{item.pluginName || "-"}</p>
           </div>
           <div>
-            <p className="text-xs text-muted-foreground">Project Name</p>
-            <p className="font-medium truncate">{item.project_name || "-"}</p>
+            <p className="text-xs text-muted-foreground">Project</p>
+            <p className="font-medium truncate">{item.cloudProjectName || item.fileName || "-"}</p>
           </div>
           <div>
-            <p className="text-xs text-muted-foreground">Email</p>
-            <p className="font-medium truncate">{item.email || "-"}</p>
+            <p className="text-xs text-muted-foreground">Date</p>
+            <p className="font-medium truncate">
+              {item.dateTime ? new Date(item.dateTime as string).toLocaleDateString() : "-"}
+            </p>
           </div>
         </div>
       </CardContent>

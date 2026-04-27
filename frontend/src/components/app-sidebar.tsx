@@ -58,6 +58,10 @@ const data = {
       title: "Warnings",
       url: "/warnings",
     },
+    {
+      title: "Model Explorer",
+      url: "/model-explorer",
+    },
   ],
 };
 

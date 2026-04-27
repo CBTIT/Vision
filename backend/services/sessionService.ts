@@ -3,6 +3,12 @@ import RevitSyncEvent from "../models/RevitSyncEvents.js";
 import UserMappings from "../models/UserMappings.js";
 import mongoose from "mongoose";
 
+function resolveSyncDate(sync: Record<string, unknown>): Date | null {
+  const raw = (sync.dateTime ?? sync.date) as unknown;
+  if (raw instanceof Date && !Number.isNaN(raw.getTime())) return raw;
+  return null;
+}
+
 type SessionFilters = {
   limit?: number;
   page?: number;
@@ -15,6 +21,8 @@ type SessionFilters = {
   cloudProjectName?: string;
   /** When true, only sessions with crashStatus true */
   crashOnly?: boolean;
+  /** When true, only sessions that are still open (closingTime empty/null/missing) */
+  liveOnly?: boolean;
 };
 
 function buildDateRangeMatch(filters: { from?: string; to?: string }): {
@@ -128,6 +136,10 @@ const buildSessionFilters = (filters: SessionFilters) => {
   }
   if (filters.crashOnly) {
     query.crashStatus = true;
+  }
+  if (filters.liveOnly) {
+    query.closingTime = { $in: [null, ""] };
+    query.crashStatus = { $ne: true };
   }
   return query;
 };
@@ -335,35 +347,37 @@ export const getSessions = async (filters: SessionFilters) => {
   const syncDocs =
     allSyncIds.length > 0
       ? await RevitSyncEvent.find({ _id: { $in: allSyncIds } })
-          .select({ _id: 1, revitSessionId: 1, date: 1 })
+          .select({ _id: 1, revitSessionId: 1, dateTime: 1, date: 1 })
           .lean()
       : [];
 
   const syncsBySessionId = new Map<
     string,
-    Array<{ _id: unknown; date: Date | string }>
+    Array<{ _id: unknown; ts: Date }>
   >();
   for (const sync of syncDocs) {
+    const ts = resolveSyncDate(sync);
+    if (!ts) continue;
     const key = String(sync.revitSessionId);
     const list = syncsBySessionId.get(key) ?? [];
-    list.push({ _id: sync._id, date: sync.date });
+    list.push({ _id: sync._id, ts });
     syncsBySessionId.set(key, list);
   }
 
   const enrichedItems = items.map((item) => {
     const row = item.toObject();
     const sessionSyncs = (syncsBySessionId.get(String(row._id)) ?? []).sort(
-      (a, b) => new Date(a.date).getTime() - new Date(b.date).getTime(),
+      (a, b) => a.ts.getTime() - b.ts.getTime(),
     );
 
     const syncTimeline = sessionSyncs.map((sync, index) => {
-      const currentTime = new Date(sync.date).getTime();
+      const currentTime = sync.ts.getTime();
       const previousTime =
-        index > 0 ? new Date(sessionSyncs[index - 1].date).getTime() : null;
+        index > 0 ? sessionSyncs[index - 1].ts.getTime() : null;
 
       return {
         syncId: String(sync._id),
-        time: new Date(sync.date).toISOString(),
+        time: sync.ts.toISOString(),
         gapMinutesFromPrevious:
           previousTime === null
             ? null
@@ -413,22 +427,23 @@ export const getSessionById = async (sessionId: string) => {
   const syncDocs =
     syncIds.length > 0
       ? await RevitSyncEvent.find({ _id: { $in: syncIds } })
-          .select({ _id: 1, date: 1 })
+          .select({ _id: 1, dateTime: 1, date: 1 })
           .lean()
       : [];
 
-  const orderedSyncs = syncDocs.sort(
-    (a, b) => new Date(a.date).getTime() - new Date(b.date).getTime(),
-  );
+  const orderedSyncs = syncDocs
+    .map((sync) => ({ _id: sync._id, ts: resolveSyncDate(sync) }))
+    .filter((s): s is { _id: unknown; ts: Date } => s.ts !== null)
+    .sort((a, b) => a.ts.getTime() - b.ts.getTime());
 
   const syncTimeline = orderedSyncs.map((sync, index) => {
-    const currentTime = new Date(sync.date).getTime();
+    const currentTime = sync.ts.getTime();
     const previousTime =
-      index > 0 ? new Date(orderedSyncs[index - 1].date).getTime() : null;
+      index > 0 ? orderedSyncs[index - 1].ts.getTime() : null;
 
     return {
       syncId: String(sync._id),
-      time: new Date(sync.date).toISOString(),
+      time: sync.ts.toISOString(),
       gapMinutesFromPrevious:
         previousTime === null
           ? null

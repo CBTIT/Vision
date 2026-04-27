@@ -15,15 +15,14 @@ const buildSyncFilters = (filters: SyncFilters) => {
     query.autodeskUserName = filters.autodeskUserName;
   }
   if (filters.from || filters.to) {
-    query.date = {};
-    if (filters.from) {
-      query.date.$gte = new Date(filters.from);
-    }
+    const dateFilter: Record<string, Date> = {};
+    if (filters.from) dateFilter.$gte = new Date(filters.from);
     if (filters.to) {
       const end = new Date(filters.to);
       end.setDate(end.getDate() + 1);
-      query.date.$lt = end;
+      dateFilter.$lt = end;
     }
+    query.$or = [{ dateTime: dateFilter }, { date: dateFilter }];
   }
   return query;
 };
@@ -39,7 +38,7 @@ export const getSyncs = async (filters: SyncFilters) => {
   const skip = (page - 1) * limit;
 
   const [items, total] = await Promise.all([
-    RevitSyncEvent.find(query).sort({ date: -1 }).skip(skip).limit(limit),
+    RevitSyncEvent.find(query).sort({ dateTime: -1, date: -1 }).skip(skip).limit(limit),
     RevitSyncEvent.countDocuments(query),
   ]);
 
@@ -86,11 +85,15 @@ export const getSyncs = async (filters: SyncFilters) => {
 
   const enrichedItems = items.map((item) => {
     const row = item.toObject();
+    const storedProjectName = typeof row.cloudProjectName === "string" && row.cloudProjectName.trim()
+      ? row.cloudProjectName.trim()
+      : "";
     return {
       ...row,
       fullName: fullNameMap.get(row.autodeskUserName) ?? "",
       cloudProjectName:
-        projectNameBySessionId.get(row.revitSessionId?.toString?.() ?? "") ?? "",
+        storedProjectName ||
+        (projectNameBySessionId.get(row.revitSessionId?.toString?.() ?? "") ?? ""),
     };
   });
 
@@ -112,13 +115,17 @@ export const getSyncById = async (id: string) => {
 
   const row = item.toObject();
 
+  const storedProjectName = typeof row.cloudProjectName === "string" && row.cloudProjectName.trim()
+    ? row.cloudProjectName.trim()
+    : "";
+
   const [mappingDoc, sessionDoc] = await Promise.all([
     row.autodeskUserName
       ? UserMappings.findOne({ autodeskUserName: row.autodeskUserName })
           .select({ fullName: 1 })
           .lean()
       : null,
-    row.revitSessionId
+    !storedProjectName && row.revitSessionId
       ? RevitSession.findById(row.revitSessionId)
           .select({ cloudProjectName: 1, projectId: 1 })
           .lean()
@@ -129,6 +136,7 @@ export const getSyncById = async (id: string) => {
     ...row,
     fullName: mappingDoc?.fullName ?? "",
     cloudProjectName:
+      storedProjectName ||
       (typeof sessionDoc?.cloudProjectName === "string" &&
         sessionDoc.cloudProjectName.trim()) ||
       (typeof sessionDoc?.projectId === "string" && sessionDoc.projectId.trim()) ||

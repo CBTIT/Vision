@@ -13,6 +13,7 @@ const ActiveUsers = lazy(() => import("./components/activeUsers"));
 const ActiveProjects = lazy(() => import("./components/activeProjects"));
 const SessionsSyncsPage = lazy(() => import("./components/sessions-syncs"));
 const Warnings = lazy(() => import("./components/warnings"));
+const ModelExplorer = lazy(() => import("./components/modelExplorer"));
 const Login = lazy(() => import("./components/login"));
 
 function PageLoader() {
@@ -66,6 +67,7 @@ function App() {
           />
           <Route path="syncs" element={<SessionsSyncsPage mode="syncs" />} />
           <Route path="warnings" element={<Warnings />} />
+          <Route path="model-explorer" element={<ModelExplorer />} />
         </Route>
       </Routes>
     </Suspense>

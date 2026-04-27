@@ -2,7 +2,7 @@ import mongoose, { Schema } from "mongoose";
 
 const RevitSyncEventSchema = new Schema(
   {
-    date: { type: Date, required: true },
+    dateTime: { type: Date, required: true },
     syncStartTime: { type: Date, required: true },
     syncEndTime: { type: Date, required: true },
     syncReadyTime: { type: Date, required: true },
@@ -12,7 +12,7 @@ const RevitSyncEventSchema = new Schema(
     totalDuration: { type: Number, default: 0 },
 
     fileName: { type: String, default: "" },
-    filePath: { type: String, default: "" },
+    cloudProjectName: { type: String, default: "" },
     autodeskUserName: { type: String, default: "" },
 
     revitSessionId: {

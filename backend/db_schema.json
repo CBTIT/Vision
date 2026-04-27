@@ -1,0 +1,132 @@
+{
+  "database": "CBT_Tools",
+  "collections": {
+    "revit_sessions": {
+      "description": "One document per Revit document open event. Closing time and session duration are filled in when the document closes.",
+      "fields": {
+        "_id":                  { "type": "ObjectId",        "note": "Auto-generated" },
+        "dateTime":             { "type": "DateTime (UTC)",  "note": "When the record was inserted" },
+        "openingStartTime":     { "type": "DateTime (UTC)",  "note": "When the user selected the file to open" },
+        "openingEndTime":       { "type": "DateTime (UTC)",  "note": "When Revit finished loading the file" },
+        "openingReadyTime":     { "type": "DateTime (UTC)",  "note": "When the UI was ready for use" },
+        "openingDuration":      { "type": "Number",          "unit": "seconds", "note": "openingEndTime - openingStartTime" },
+        "openingGap":           { "type": "Number",          "unit": "seconds", "note": "openingReadyTime - openingEndTime" },
+        "totalOpeningDuration": { "type": "Number",          "unit": "seconds", "note": "openingReadyTime - openingStartTime" },
+        "closingTime":          { "type": "DateTime (UTC)",  "note": "Empty string until document closes" },
+        "sessionDuration":      { "type": "Number",          "unit": "seconds", "note": "Empty string until document closes" },
+        "revitVersion":         { "type": "String" },
+        "autodeskUserName":     { "type": "String" },
+        "deviceUserName":       { "type": "String",          "note": "Windows username" },
+        "deviceName":           { "type": "String",          "note": "Machine hostname" },
+        "networkConnectionType":{ "type": "String" },
+        "localIPAddress":       { "type": "String" },
+        "cbtAssemblyVersion":   { "type": "String" },
+        "cloudPlatform":        { "type": "String" },
+        "cloudProjectName":     { "type": "String" },
+        "fileName":             { "type": "String" },
+        "filePath":             { "type": "String",          "note": "Actual file system path" },
+        "modelId":              { "type": "String",          "note": "Revit cloud model GUID" },
+        "projectId":            { "type": "String",          "note": "Autodesk cloud project ID" },
+        "crashStatus":          { "type": "Boolean",         "note": "Set to true if previous session had no closingTime" },
+        "fileSize":             { "type": "Number",          "unit": "bytes" },
+        "deviceFreeSpace":      { "type": "Number",          "unit": "bytes" },
+        "warningCount":         { "type": "Number" },
+        "openWorksetCount":     { "type": "Number" },
+        "openWorksetNames":     { "type": "Array<String>" },
+        "missingReferences":    { "type": "Array<String>" },
+        "syncDatabaseIds":      { "type": "Array<ObjectId>", "note": "References to revit_sync_events._id, appended as syncs occur" }
+      }
+    },
+
+    "revit_sync_events": {
+      "description": "One document per sync-to-central event.",
+      "fields": {
+        "_id":             { "type": "ObjectId",       "note": "Auto-generated" },
+        "dateTime":        { "type": "DateTime (UTC)", "note": "When the record was inserted" },
+        "syncStartTime":   { "type": "DateTime (UTC)" },
+        "syncEndTime":     { "type": "DateTime (UTC)" },
+        "syncReadyTime":   { "type": "DateTime (UTC)", "note": "When Revit was ready after sync" },
+        "duration":        { "type": "Number",         "unit": "seconds", "note": "syncEndTime - syncStartTime" },
+        "gap":             { "type": "Number",         "unit": "seconds", "note": "syncReadyTime - syncEndTime" },
+        "totalDuration":   { "type": "Number",         "unit": "seconds", "note": "syncReadyTime - syncStartTime" },
+        "fileName":        { "type": "String" },
+        "cloudProjectName":{ "type": "String" },
+        "autodeskUserName":{ "type": "String" },
+        "revitSessionId":  { "type": "ObjectId",       "note": "Reference to revit_sessions._id" },
+        "modelId":         { "type": "String",         "note": "Revit cloud model GUID" },
+        "projectId":       { "type": "String",         "note": "Autodesk cloud project ID" }
+      }
+    },
+
+    "plugin_use": {
+      "description": "One document per plugin button click.",
+      "fields": {
+        "_id":             { "type": "ObjectId",       "note": "Auto-generated" },
+        "dateTime":        { "type": "DateTime (UTC)", "note": "When the plugin was opened" },
+        "autodeskUserName":{ "type": "String" },
+        "pluginName":      { "type": "String",         "note": "Internal plugin identifier, e.g. 'activity_monitor'" },
+        "fileName":        { "type": "String" },
+        "cloudProjectName":{ "type": "String" },
+        "modelId":         { "type": "String" },
+        "projectId":       { "type": "String" },
+        "notes":           { "type": "String",         "note": "Optional additional context" }
+      }
+    },
+
+    "revit_heartbeat": {
+      "description": "One document per autodeskUserName + machine + revitVersion combination. Upserted every 60 seconds. Represents current live state of a Revit session.",
+      "fields": {
+        "_id":             { "type": "ObjectId",       "note": "Auto-generated" },
+        "autodeskUserName":{ "type": "String" },
+        "machine":         { "type": "String",         "note": "Machine hostname" },
+        "revitVersion":    { "type": "String" },
+        "openDocs":        {
+          "type": "Array<Object>",
+          "items": {
+            "sessionId":   { "type": "String", "note": "modelId of the open document" },
+            "modelName":   { "type": "String", "note": "File name of the open document" }
+          }
+        },
+        "activeDocId":     { "type": "String",         "note": "modelId of the currently active document" },
+        "activeDocName":   { "type": "String" },
+        "activeViewId":    { "type": "String" },
+        "activeViewName":  { "type": "String" },
+        "activeProjectName":{ "type": "String" },
+        "dateTime":        { "type": "DateTime (UTC)", "note": "Last heartbeat timestamp" }
+      }
+    },
+
+    "view_bookmarks": {
+      "description": "One document per user. Bookmarks are nested under model GUIDs.",
+      "fields": {
+        "_id":             { "type": "ObjectId",       "note": "Auto-generated" },
+        "autodeskUserName":{ "type": "String" },
+        "files": {
+          "type": "Object",
+          "note": "Keys are model GUIDs",
+          "valueShape": {
+            "fileName":    { "type": "String" },
+            "bookmarks":   {
+              "type": "Array<Object>",
+              "items": {
+                "viewId":    { "type": "Number",        "note": "Revit ElementId value" },
+                "viewName":  { "type": "String" },
+                "dateAdded": { "type": "DateTime (UTC)" }
+              }
+            }
+          }
+        }
+      }
+    },
+
+    "user_mappings": {
+      "description": "Managed externally. Maps Autodesk usernames to display names and emails. Read-only from the plugin.",
+      "fields": {
+        "_id":             { "type": "ObjectId",       "note": "Auto-generated" },
+        "autodeskUserName":{ "type": "String" },
+        "fullName":        { "type": "String" },
+        "email":           { "type": "String" }
+      }
+    }
+  }
+}
