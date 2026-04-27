@@ -433,7 +433,7 @@ export const getSessionById = async (sessionId: string) => {
 
   const orderedSyncs = syncDocs
     .map((sync) => ({ _id: sync._id, ts: resolveSyncDate(sync) }))
-    .filter((s): s is { _id: unknown; ts: Date } => s.ts !== null)
+    .filter((s): s is { _id: mongoose.Types.ObjectId; ts: Date } => s.ts !== null)
     .sort((a, b) => a.ts.getTime() - b.ts.getTime());
 
   const syncTimeline = orderedSyncs.map((sync, index) => {
