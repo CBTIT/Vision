@@ -1,7 +1,20 @@
 {
   "permissions": {
     "allow": [
-      "Read(//c/c/Users/verma/Desktop/Jarvis/03_Code/Vision/**)"
+      "Read(//c/c/Users/verma/Desktop/Jarvis/03_Code/Vision/**)",
+      "Bash(Get-ChildItem -Path \"C:\\\\Users\\\\verma\\\\Desktop\\\\Jarvis\\\\03_Code\\\\Vision\" -Force)",
+      "Bash(Select-Object Name, Mode)",
+      "PowerShell(Get-ChildItem -Path \"C:\\\\Users\\\\verma\\\\Desktop\\\\Jarvis\\\\03_Code\\\\Vision\" -Force | Select-Object Name, @{Name=\"Type\"; Expression={if\\($_.PSIsContainer\\){\"DIR\"}else{\"FILE\"}}} | Format-Table -AutoSize)",
+      "PowerShell(dir \"C:\\\\Users\\\\verma\\\\Desktop\\\\Jarvis\\\\03_Code\\\\Vision\\\\backend\" -Directory | ForEach-Object {$_.Name})",
+      "PowerShell(dir \"C:\\\\Users\\\\verma\\\\Desktop\\\\Jarvis\\\\03_Code\\\\Vision\\\\frontend\\\\src\" -Directory | ForEach-Object {$_.Name})",
+      "PowerShell(dir \"C:\\\\Users\\\\verma\\\\Desktop\\\\Jarvis\\\\03_Code\\\\Vision\\\\backend\" -File | Where-Object {$_.Name -match '\\\\.\\(ts|js|json\\)$'} | ForEach-Object {$_.Name})",
+      "PowerShell(dir \"C:\\\\Users\\\\verma\\\\Desktop\\\\Jarvis\\\\03_Code\\\\Vision\\\\backend\\\\models\" -File | ForEach-Object {$_.Name})",
+      "PowerShell(dir \"C:\\\\Users\\\\verma\\\\Desktop\\\\Jarvis\\\\03_Code\\\\Vision\\\\backend\\\\controllers\" -File | ForEach-Object {$_.Name})",
+      "PowerShell(dir \"C:\\\\Users\\\\verma\\\\Desktop\\\\Jarvis\\\\03_Code\\\\Vision\\\\backend\\\\services\" -File | ForEach-Object {$_.Name})",
+      "PowerShell(dir \"C:\\\\Users\\\\verma\\\\Desktop\\\\Jarvis\\\\03_Code\\\\Vision\\\\backend\\\\routes\" -File | ForEach-Object {$_.Name})",
+      "PowerShell(dir \"C:\\\\Users\\\\verma\\\\Desktop\\\\Jarvis\\\\03_Code\\\\Vision\\\\backend\\\\middleware\" -File | ForEach-Object {$_.Name})",
+      "PowerShell(dir \"C:\\\\Users\\\\verma\\\\Desktop\\\\Jarvis\\\\03_Code\\\\Vision\\\\frontend\\\\src\\\\components\" -File | ForEach-Object {$_.Name})",
+      "PowerShell(dir \"C:\\\\Users\\\\verma\\\\Desktop\\\\Jarvis\\\\03_Code\\\\Vision\\\\frontend\\\\src\" -File | ForEach-Object {$_.Name})"
     ]
   }
 }
