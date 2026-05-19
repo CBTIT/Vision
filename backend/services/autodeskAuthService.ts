@@ -4,7 +4,7 @@ const CLIENT_ID = process.env.ACC_CLIENT_ID!;
 const CLIENT_SECRET = process.env.ACC_CLIENT_SECRET!;
 const REDIRECT_URI =
   process.env.AUTODESK_CALLBACK_URL ||
-  "http://localhost:3000/api/autodesk/callback";
+  "http://localhost:3000/auth/callback";
 const FRONTEND_URL = process.env.FRONTEND_URL || "http://localhost:5173";
 
 // Temporary state -> userId map (cleared after use or 10 min)

@@ -472,6 +472,14 @@ export type ModelSizeHistoryPoint = {
   maxFileSize: number;
 };
 
+export type ModelSummaryHistoryPoint = {
+  date: string;
+  maxFileSize: number;
+  maxOpeningDuration: number;
+  maxSyncDuration: number;
+  maxWarningCount: number;
+};
+
 export async function fetchModelsList(params?: {
   from?: string;
   to?: string;
@@ -542,6 +550,24 @@ export async function fetchModelWarningsHistory(params: {
     points: ModelWarningHistoryPoint[];
   }>(
     `/api/models/${encodeURIComponent(params.modelId)}/warning-history`,
+    query,
+  );
+  return data.points;
+}
+
+export async function fetchModelSummaryHistory(params: {
+  modelId: string;
+  from?: string;
+  to?: string;
+}): Promise<ModelSummaryHistoryPoint[]> {
+  const query: Record<string, string> = {};
+  if (params.from) query.from = params.from;
+  if (params.to) query.to = params.to;
+  const data = await apiFetch<{
+    modelId: string;
+    points: ModelSummaryHistoryPoint[];
+  }>(
+    `/api/models/${encodeURIComponent(params.modelId)}/summary-history`,
     query,
   );
   return data.points;

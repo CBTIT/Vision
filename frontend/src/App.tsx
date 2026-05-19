@@ -9,6 +9,7 @@ const AllUsers = lazy(() => import("./components/allUsers"));
 const CloudData = lazy(() => import("./components/cloudData"));
 const Plugins = lazy(() => import("./components/plugins"));
 const AllModels = lazy(() => import("./components/alModels"));
+const ModelSummary = lazy(() => import("./components/modelSummary"));
 const ActiveUsers = lazy(() => import("./components/activeUsers"));
 const ActiveProjects = lazy(() => import("./components/activeProjects"));
 const SessionsSyncsPage = lazy(() => import("./components/sessions-syncs"));
@@ -59,6 +60,7 @@ function App() {
           <Route path="active-users" element={<ActiveUsers />} />
           <Route path="active-projects" element={<ActiveProjects />} />
           <Route path="models" element={<AllModels />} />
+          <Route path="model-summary" element={<ModelSummary />} />
           <Route path="plugins" element={<Plugins />} />
           <Route path="cloud-data" element={<CloudData />} />
           <Route

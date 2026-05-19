@@ -39,6 +39,10 @@ const data = {
       url: "/models",
     },
     {
+      title: "Model Summary",
+      url: "/model-summary",
+    },
+    {
       title: "Plugins",
       url: "/plugins",
     },

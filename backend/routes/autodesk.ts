@@ -5,7 +5,6 @@ import {
   getAuthUrlController,
   getStatusController,
   graphqlProxyController,
-  oauthCallbackController,
 } from "../controllers/autodeskController.js";
 
 const router = Router();
@@ -14,7 +13,7 @@ const router = Router();
 router.get("/auth-url", authMiddleware, getAuthUrlController);
 
 // Autodesk redirects here after user authorizes — no app auth needed
-router.get("/callback", oauthCallbackController);
+// Handled at root level in index.ts: GET /auth/callback
 
 // Check whether the current user has a valid Autodesk token
 router.get("/status", authMiddleware, getStatusController);

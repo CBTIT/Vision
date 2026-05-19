@@ -1,6 +1,7 @@
 import type { PipelineStage } from "mongoose";
 import RevitSession from "../models/RevitSession.js";
 import UserMappings from "../models/UserMappings.js";
+import RevitSyncEvent from "../models/RevitSyncEvents.js";
 
 export type ModelSummary = {
   modelId: string;
@@ -18,6 +19,14 @@ export type ModelSummary = {
 export type ModelSizeHistoryPoint = {
   date: string;
   maxFileSize: number;
+};
+
+export type ModelSummaryHistoryPoint = {
+  date: string;
+  maxFileSize: number;
+  maxOpeningDuration: number;
+  maxSyncDuration: number;
+  maxWarningCount: number;
 };
 
 function escapeRegex(value: string): string {
@@ -440,4 +449,171 @@ export const getModelWarningsTimeSeries = async (
     date: row._id,
     warningCount: row.warningCount,
   }));
+};
+
+export const getModelSummaryHistory = async (
+  modelId: string,
+  from?: string,
+  to?: string,
+): Promise<ModelSummaryHistoryPoint[]> => {
+  const selectedIdentifier = modelId.trim();
+  const normalizedModelId = normalizeModelId(modelId);
+  if (!selectedIdentifier || !normalizedModelId) {
+    console.log("getModelSummaryHistory: empty modelId");
+    return [];
+  }
+
+  console.log("getModelSummaryHistory query:", { selectedIdentifier, normalizedModelId, from, to });
+
+  const matchStage: Record<string, unknown> = {
+    $or: [
+      {
+        modelId: {
+          $regex: `^\\{?${escapeRegex(normalizedModelId)}\\}?$`,
+          $options: "i",
+        },
+      },
+      {
+        fileName: {
+          $regex: `^${escapeRegex(selectedIdentifier)}$`,
+          $options: "i",
+        },
+      },
+    ],
+  };
+
+  if (from || to) {
+    const dateFilter: Record<string, Date> = {};
+    if (from) {
+      dateFilter["$gte"] = new Date(from);
+    }
+    if (to) {
+      const endExclusive = new Date(to);
+      endExclusive.setDate(endExclusive.getDate() + 1);
+      dateFilter["$lt"] = endExclusive;
+    }
+    matchStage["dateTime"] = dateFilter;
+  }
+
+  const sessionRows = await RevitSession.aggregate<{
+    _id: string;
+    maxFileSize: number;
+    openingDurations: number[];
+    maxWarningCount: number;
+  }>([
+    { $match: matchStage },
+    {
+      $group: {
+        _id: {
+          $dateToString: {
+            format: "%Y-%m-%d",
+            date: "$dateTime",
+            timezone: "UTC",
+          },
+        },
+        maxFileSize: { $max: { $ifNull: ["$fileSize", 0] } },
+        openingDurations: {
+          $push: { $ifNull: ["$openingDuration", 0] },
+        },
+        maxWarningCount: { $max: { $ifNull: ["$warningCount", 0] } },
+      },
+    },
+    { $sort: { _id: 1 } },
+  ]);
+
+  console.log("getModelSummaryHistory sessionRows:", sessionRows.length);
+
+  const syncMatchStage: Record<string, unknown> = {
+    $or: [
+      {
+        modelId: {
+          $regex: `^\\{?${escapeRegex(normalizedModelId)}\\}?$`,
+          $options: "i",
+        },
+      },
+      {
+        fileName: {
+          $regex: `^${escapeRegex(selectedIdentifier)}$`,
+          $options: "i",
+        },
+      },
+    ],
+  };
+
+  if (from || to) {
+    const dateFilter: Record<string, Date> = {};
+    if (from) {
+      dateFilter["$gte"] = new Date(from);
+    }
+    if (to) {
+      const endExclusive = new Date(to);
+      endExclusive.setDate(endExclusive.getDate() + 1);
+      dateFilter["$lt"] = endExclusive;
+    }
+    syncMatchStage["dateTime"] = dateFilter;
+  }
+
+  const syncRows = await RevitSyncEvent.aggregate<{
+    _id: string;
+    syncDurations: number[];
+  }>([
+    { $match: syncMatchStage },
+    {
+      $group: {
+        _id: {
+          $dateToString: {
+            format: "%Y-%m-%d",
+            date: "$dateTime",
+            timezone: "UTC",
+          },
+        },
+        syncDurations: {
+          $push: { $ifNull: ["$duration", 0] },
+        },
+      },
+    },
+    { $sort: { _id: 1 } },
+  ]);
+
+  console.log("getModelSummaryHistory syncRows:", syncRows.length);
+
+  function median(values: number[]): number {
+    if (values.length === 0) return 0;
+    const sorted = [...values].sort((a, b) => a - b);
+    const mid = Math.floor(sorted.length / 2);
+    if (sorted.length % 2 === 0) {
+      return (sorted[mid - 1] + sorted[mid]) / 2;
+    }
+    return sorted[mid];
+  }
+
+  const dateSet = new Set<string>();
+  const fileSizeMap = new Map<string, number>();
+  const openingDurationMap = new Map<string, number>();
+  const syncDurationMap = new Map<string, number>();
+  const warningCountMap = new Map<string, number>();
+
+  for (const row of sessionRows) {
+    dateSet.add(row._id);
+    fileSizeMap.set(row._id, row.maxFileSize);
+    openingDurationMap.set(row._id, median(row.openingDurations));
+    warningCountMap.set(row._id, row.maxWarningCount);
+  }
+
+  for (const row of syncRows) {
+    dateSet.add(row._id);
+    syncDurationMap.set(row._id, median(row.syncDurations));
+  }
+
+  const dates = [...dateSet].sort((a, b) => a.localeCompare(b));
+
+  return dates
+    .map((date) => ({
+      date,
+      maxFileSize: fileSizeMap.get(date) ?? 0,
+      maxOpeningDuration: openingDurationMap.get(date) ?? 0,
+      maxSyncDuration: syncDurationMap.get(date) ?? 0,
+      maxWarningCount: warningCountMap.get(date) ?? 0,
+    }))
+    .filter((point) => point.maxFileSize > 0);
 };
