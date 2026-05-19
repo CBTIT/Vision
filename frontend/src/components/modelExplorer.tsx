@@ -160,7 +160,7 @@ export default function ModelExplorer() {
       let cursor: string | null = null;
       
       do {
-        const query = cursor
+        const query: string = cursor
           ? `query ($hubId: ID!, $cursor: String) {
               projects(hubId: $hubId, pagination: { cursor: $cursor, limit: 99 }) {
                 results { id name }
