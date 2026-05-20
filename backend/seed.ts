@@ -13,28 +13,44 @@ const seedDatabase = async () => {
     console.log("Cleared existing users");
 
     // Hash passwords
-    const password1 = await bcrypt.hash("test1234", 10);
-    const password2 = await bcrypt.hash("test1234", 10);
-    const password3 = await bcrypt.hash("test1234", 10);
+    const password = await bcrypt.hash("test1234", 10);
 
     // Seed users
     const users = [
       {
         email: "vincent@cbtarchitects.com",
-        password: password1,
+        password: password,
         fullName: "Rood Vincent",
         lastPasswordChange: new Date(),
       },
       {
         email: "paquette@cbtarchitects.com",
-        password: password2,
+        password: password,
         fullName: "William Paquette",
         lastPasswordChange: new Date(),
       },
       {
         email: "verma@cbtarchitects.com",
-        password: password3,
+        password: password,
         fullName: "Avinash Verma",
+        lastPasswordChange: new Date(),
+      },
+      {
+        email: "nirva@cbtarchitects.com",
+        password: password,
+        fullName: "Nirva Fereshetian",
+        lastPasswordChange: new Date(),
+      },
+      {
+        email: "it@cbtarchitects.com",
+        password: password,
+        fullName: "IT Test",
+        lastPasswordChange: new Date(),
+      },
+      {
+        email: "moslow@cbtarchitects.com",
+        password: password,
+        fullName: "Kelsey Moslow",
         lastPasswordChange: new Date(),
       },
     ];
