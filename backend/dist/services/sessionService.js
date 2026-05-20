@@ -2,6 +2,12 @@ import RevitSession from "../models/RevitSession.js";
 import RevitSyncEvent from "../models/RevitSyncEvents.js";
 import UserMappings from "../models/UserMappings.js";
 import mongoose from "mongoose";
+function resolveSyncDate(sync) {
+    const raw = (sync.dateTime ?? sync.date);
+    if (raw instanceof Date && !Number.isNaN(raw.getTime()))
+        return raw;
+    return null;
+}
 function buildDateRangeMatch(filters) {
     if (!filters.from && !filters.to)
         return {};
@@ -98,6 +104,10 @@ const buildSessionFilters = (filters) => {
     }
     if (filters.crashOnly) {
         query.crashStatus = true;
+    }
+    if (filters.liveOnly) {
+        query.closingTime = { $in: [null, ""] };
+        query.crashStatus = { $ne: true };
     }
     return query;
 };
@@ -230,25 +240,28 @@ export const getSessions = async (filters) => {
     const allSyncIds = Array.from(new Set(items.flatMap((item) => (item.syncDatabaseIds ?? []).map((id) => String(id)))));
     const syncDocs = allSyncIds.length > 0
         ? await RevitSyncEvent.find({ _id: { $in: allSyncIds } })
-            .select({ _id: 1, revitSessionId: 1, date: 1 })
+            .select({ _id: 1, revitSessionId: 1, dateTime: 1, date: 1 })
             .lean()
         : [];
     const syncsBySessionId = new Map();
     for (const sync of syncDocs) {
+        const ts = resolveSyncDate(sync);
+        if (!ts)
+            continue;
         const key = String(sync.revitSessionId);
         const list = syncsBySessionId.get(key) ?? [];
-        list.push({ _id: sync._id, date: sync.date });
+        list.push({ _id: sync._id, ts });
         syncsBySessionId.set(key, list);
     }
     const enrichedItems = items.map((item) => {
         const row = item.toObject();
-        const sessionSyncs = (syncsBySessionId.get(String(row._id)) ?? []).sort((a, b) => new Date(a.date).getTime() - new Date(b.date).getTime());
+        const sessionSyncs = (syncsBySessionId.get(String(row._id)) ?? []).sort((a, b) => a.ts.getTime() - b.ts.getTime());
         const syncTimeline = sessionSyncs.map((sync, index) => {
-            const currentTime = new Date(sync.date).getTime();
-            const previousTime = index > 0 ? new Date(sessionSyncs[index - 1].date).getTime() : null;
+            const currentTime = sync.ts.getTime();
+            const previousTime = index > 0 ? sessionSyncs[index - 1].ts.getTime() : null;
             return {
                 syncId: String(sync._id),
-                time: new Date(sync.date).toISOString(),
+                time: sync.ts.toISOString(),
                 gapMinutesFromPrevious: previousTime === null
                     ? null
                     : Math.round((currentTime - previousTime) / 60000),
@@ -286,16 +299,19 @@ export const getSessionById = async (sessionId) => {
     const syncIds = Array.from(new Set((row.syncDatabaseIds ?? []).map((id) => String(id))));
     const syncDocs = syncIds.length > 0
         ? await RevitSyncEvent.find({ _id: { $in: syncIds } })
-            .select({ _id: 1, date: 1 })
+            .select({ _id: 1, dateTime: 1, date: 1 })
             .lean()
         : [];
-    const orderedSyncs = syncDocs.sort((a, b) => new Date(a.date).getTime() - new Date(b.date).getTime());
+    const orderedSyncs = syncDocs
+        .map((sync) => ({ _id: sync._id, ts: resolveSyncDate(sync) }))
+        .filter((s) => s.ts !== null)
+        .sort((a, b) => a.ts.getTime() - b.ts.getTime());
     const syncTimeline = orderedSyncs.map((sync, index) => {
-        const currentTime = new Date(sync.date).getTime();
-        const previousTime = index > 0 ? new Date(orderedSyncs[index - 1].date).getTime() : null;
+        const currentTime = sync.ts.getTime();
+        const previousTime = index > 0 ? orderedSyncs[index - 1].ts.getTime() : null;
         return {
             syncId: String(sync._id),
-            time: new Date(sync.date).toISOString(),
+            time: sync.ts.toISOString(),
             gapMinutesFromPrevious: previousTime === null
                 ? null
                 : Math.round((currentTime - previousTime) / 60000),

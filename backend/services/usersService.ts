@@ -15,6 +15,7 @@ type UserSummary = {
     revitVersions: string[];
   }>;
   lastActiveAt: string;
+  firstActiveAt: string;
 };
 
 function compareVersionStrings(left: string, right: string): number {
@@ -55,6 +56,7 @@ export const getUsersSummary = async (): Promise<UserSummary[]> => {
       _id: string;
       sessionsCount: number;
       lastActiveAt: Date;
+      firstActiveAt: Date;
     }>([
       { $match: { autodeskUserName: { $exists: true, $ne: "" } } },
       {
@@ -62,6 +64,7 @@ export const getUsersSummary = async (): Promise<UserSummary[]> => {
           _id: "$autodeskUserName",
           sessionsCount: { $sum: 1 },
           lastActiveAt: { $max: "$dateTime" },
+          firstActiveAt: { $min: "$dateTime" },
         },
       },
     ]),
@@ -154,6 +157,12 @@ export const getUsersSummary = async (): Promise<UserSummary[]> => {
       row.lastActiveAt instanceof Date ? row.lastActiveAt.toISOString() : "",
     ]),
   );
+  const firstActiveMap = new Map(
+    sessionCounts.map((row) => [
+      row._id,
+      row.firstActiveAt instanceof Date ? row.firstActiveAt.toISOString() : "",
+    ]),
+  );
   const syncsCountMap = new Map(
     syncCounts.map((row) => [row._id, row.syncsCount]),
   );
@@ -207,6 +216,7 @@ export const getUsersSummary = async (): Promise<UserSummary[]> => {
       ),
       pluginVersionDetails,
       lastActiveAt: lastActiveMap.get(autodeskUserName) ?? "",
+      firstActiveAt: firstActiveMap.get(autodeskUserName) ?? "",
     };
   });
 

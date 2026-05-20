@@ -1,6 +1,6 @@
 import { useEffect, useMemo, useState } from "react";
 import { format } from "date-fns";
-import { X } from "lucide-react";
+import { X, ArrowUpDown, ArrowUp, ArrowDown } from "lucide-react";
 
 import { useHeaderRight } from "./header-context";
 import { useAutoRefresh } from "@/hooks/use-auto-refresh";
@@ -24,7 +24,6 @@ import {
   SheetTitle,
 } from "@/components/ui/sheet";
 import {
-  CLICKABLE_CARD_HOVER,
   CLICKABLE_TABLE_ROW_HOVER,
   cn,
 } from "@/lib/utils";
@@ -249,111 +248,17 @@ function SyncTimeline({ timeline }: { timeline: SyncTimelineItem[] }) {
   );
 }
 
-function UserSummaryCard({
-  item,
-  onClick,
-  isSelected,
-}: {
-  item: UserSummaryItem;
-  onClick: () => void;
-  isSelected: boolean;
-}) {
-  const displayName = item.fullName?.trim() || item.autodeskUserName;
-  const lastActiveLabel = item.lastActiveAt
-    ? format(new Date(item.lastActiveAt), "dd MMM yyyy, hh:mm a")
-    : "-";
-  const pluginBadges =
-    item.pluginVersionDetails && item.pluginVersionDetails.length > 0
-      ? Array.from(
-          item.pluginVersionDetails.reduce(
-            (latestByRevit, detail) => {
-              for (const revitVersion of detail.revitVersions) {
-                const current = latestByRevit.get(revitVersion);
-                if (
-                  !current ||
-                  compareVersionStrings(detail.pluginVersion, current) > 0
-                ) {
-                  latestByRevit.set(revitVersion, detail.pluginVersion);
-                }
-              }
-              return latestByRevit;
-            },
-            new Map<string, string>(),
-          ),
-        )
-          .sort(([leftRevit, leftPlugin], [rightRevit, rightPlugin]) => {
-            const revitComparison = compareVersionStrings(leftRevit, rightRevit);
-            if (revitComparison !== 0) {
-              return revitComparison;
-            }
-            return compareVersionStrings(leftPlugin, rightPlugin);
-          })
-          .map(([revitVersion, pluginVersion]) => ({
-            key: `${revitVersion}-${pluginVersion}`,
-            label: `v${pluginVersion} • Revit ${revitVersion}`,
-          }))
-      : item.pluginVersions.map((pluginVersion) => ({
-          key: pluginVersion,
-          label: `v${pluginVersion}`,
-        }));
+type SortField =
+  | "user"
+  | "activePlugin"
+  | "sessionsCount"
+  | "syncsCount"
+  | "pluginUseCount"
+  | "firstActiveAt"
+  | "lastActiveAt";
+type SortOrder = "asc" | "desc";
 
-  return (
-    <Card
-      onClick={onClick}
-      className={cn(
-        "border-border/90 bg-background/95 shadow-sm",
-        isSelected
-          ? "cursor-pointer transition-[background-color,box-shadow] duration-200 hover:shadow-sm ring-2 ring-blue-400/70 hover:ring-blue-500 dark:ring-blue-500/60 dark:hover:ring-blue-400 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
-          : cn(CLICKABLE_CARD_HOVER, "hover:bg-muted/30"),
-      )}
-    >
-      <CardHeader className="pb-2">
-        <CardTitle className="truncate text-sm font-semibold">
-          {displayName}
-        </CardTitle>
-        <p className="truncate text-xs text-muted-foreground">
-          @{item.autodeskUserName}
-        </p>
-        {pluginBadges.length > 0 && (
-          <div className="mt-2 flex flex-wrap gap-1.5">
-            {pluginBadges.map((badge) => (
-              <span
-                key={badge.key}
-                className="inline-flex rounded-full border border-amber-300 bg-amber-50 px-2 py-0.5 text-[11px] font-medium text-amber-800 dark:border-amber-700 dark:bg-amber-950/50 dark:text-amber-400"
-              >
-                {badge.label}
-              </span>
-            ))}
-          </div>
-        )}
-      </CardHeader>
-      <CardContent className="space-y-2 pt-0">
-        <div className="flex items-center justify-between text-sm">
-          <span className="text-muted-foreground">Sessions</span>
-          <span className="font-semibold tabular-nums">
-            {item.sessionsCount}
-          </span>
-        </div>
-        <div className="flex items-center justify-between text-sm">
-          <span className="text-muted-foreground">Syncs</span>
-          <span className="font-semibold tabular-nums">{item.syncsCount}</span>
-        </div>
-        <div className="flex items-center justify-between text-sm">
-          <span className="text-muted-foreground">Plugin Use</span>
-          <span className="font-semibold tabular-nums">
-            {item.pluginUseCount}
-          </span>
-        </div>
-        <div className="flex items-center justify-between gap-2 text-sm">
-          <span className="text-muted-foreground">Last Active</span>
-          <span className="truncate font-semibold tabular-nums">
-            {lastActiveLabel}
-          </span>
-        </div>
-      </CardContent>
-    </Card>
-  );
-}
+// UserSummaryCard was replaced by a modern tabular layout
 
 export default function AllUsers() {
   const setHeaderRight = useHeaderRight();
@@ -362,6 +267,58 @@ export default function AllUsers() {
   const [items, setItems] = useState<UserSummaryItem[]>([]);
   const [selectedPluginVersion, setSelectedPluginVersion] = useState("all");
   const [selectedRevitVersion, setSelectedRevitVersion] = useState("all");
+  const [sortField, setSortField] = useState<SortField>("user");
+  const [sortOrder, setSortOrder] = useState<SortOrder>("asc");
+
+  const handleSort = (field: SortField) => {
+    if (sortField === field) {
+      setSortOrder(sortOrder === "asc" ? "desc" : "asc");
+    } else {
+      setSortField(field);
+      if (field === "user") {
+        setSortOrder("asc");
+      } else {
+        setSortOrder("desc");
+      }
+    }
+  };
+
+  const renderSortHeader = (
+    field: SortField,
+    label: string,
+    align: "left" | "right" = "left",
+  ) => {
+    const isActive = sortField === field;
+    return (
+      <th
+        className={cn(
+          "px-4 py-3 cursor-pointer select-none transition-colors hover:bg-muted/30 group",
+          align === "right" ? "text-right" : "text-left",
+        )}
+        onClick={() => handleSort(field)}
+      >
+        <div
+          className={cn(
+            "flex items-center gap-1.5",
+            align === "right" ? "justify-end" : "justify-start",
+          )}
+        >
+          <span>{label}</span>
+          <span className="inline-flex shrink-0">
+            {isActive ? (
+              sortOrder === "asc" ? (
+                <ArrowUp className="size-3.5 text-primary animate-in fade-in zoom-in duration-200" />
+              ) : (
+                <ArrowDown className="size-3.5 text-primary animate-in fade-in zoom-in duration-200" />
+              )
+            ) : (
+              <ArrowUpDown className="size-3.5 text-muted-foreground/30 group-hover:text-muted-foreground/70 transition-colors duration-200" />
+            )}
+          </span>
+        </div>
+      </th>
+    );
+  };
 
   const [selectedUser, setSelectedUser] = useState<UserSummaryItem | null>(
     null,
@@ -503,6 +460,40 @@ export default function AllUsers() {
       return matchesRevitVersion;
     });
   }, [items, selectedPluginVersion, selectedRevitVersion]);
+
+  const sortedItems = useMemo(() => {
+    const sorted = [...filteredItems];
+    sorted.sort((a, b) => {
+      if (sortField === "user") {
+        const nameA = (a.fullName?.trim() || a.autodeskUserName || "").toLowerCase();
+        const nameB = (b.fullName?.trim() || b.autodeskUserName || "").toLowerCase();
+        return sortOrder === "asc" ? nameA.localeCompare(nameB) : nameB.localeCompare(nameA);
+      }
+
+      if (sortField === "activePlugin") {
+        const verA = a.pluginVersions?.[0] || "";
+        const verB = b.pluginVersions?.[0] || "";
+        return sortOrder === "asc"
+          ? compareVersionStrings(verA, verB)
+          : compareVersionStrings(verB, verA);
+      }
+
+      if (sortField === "firstActiveAt" || sortField === "lastActiveAt") {
+        const valA = a[sortField];
+        const valB = b[sortField];
+        const timeA = valA ? new Date(valA).getTime() : 0;
+        const timeB = valB ? new Date(valB).getTime() : 0;
+        const scoreA = Number.isNaN(timeA) ? 0 : timeA;
+        const scoreB = Number.isNaN(timeB) ? 0 : timeB;
+        return sortOrder === "asc" ? scoreA - scoreB : scoreB - scoreA;
+      }
+
+      const valA = a[sortField] ?? 0;
+      const valB = b[sortField] ?? 0;
+      return sortOrder === "asc" ? valA - valB : valB - valA;
+    });
+    return sorted;
+  }, [filteredItems, sortField, sortOrder]);
 
   const subtitle = useMemo(
     () => `${filteredItems.length} of ${items.length} unique Autodesk users`,
@@ -804,19 +795,19 @@ export default function AllUsers() {
   return (
     <div className="flex h-full min-h-0 flex-col gap-4 overflow-hidden px-1 py-1">
       <Card className="shrink-0 border-border/90 bg-background/95 shadow-sm">
-        <CardHeader className="flex flex-col gap-3 py-4 xl:flex-row xl:items-start xl:justify-between">
-          <div className="min-w-0">
-            <CardTitle>All Users</CardTitle>
-            <p className="text-xs text-muted-foreground">{subtitle}</p>
+        <CardHeader className="flex flex-col gap-2.5 py-2.5 px-4 xl:flex-row xl:items-center xl:justify-between">
+          <div className="min-w-0 flex items-baseline gap-2">
+            <CardTitle className="text-lg">All Users</CardTitle>
+            <p className="text-[11px] text-muted-foreground">{subtitle}</p>
           </div>
 
           <div className="flex min-w-0 flex-1 justify-end xl:pl-4">
-            <div className="flex min-w-0 flex-col items-end gap-2">
+            <div className="flex min-w-0 flex-col items-end gap-1.5">
               <div className="flex min-w-0 flex-wrap items-center justify-end gap-2">
-                <p className="shrink-0 text-[11px] font-semibold uppercase tracking-wide text-muted-foreground">
+                <p className="shrink-0 text-[10px] font-bold uppercase tracking-wide text-muted-foreground">
                   CBT
                 </p>
-                <div className="flex min-w-0 flex-wrap justify-end gap-1.5">
+                <div className="flex min-w-0 flex-wrap justify-end gap-1">
                   <Button
                     type="button"
                     size="xs"
@@ -1132,10 +1123,64 @@ export default function AllUsers() {
       <div className="min-h-0 flex-1 overflow-hidden">
         {loading ? (
           <div className="h-full overflow-y-auto px-1 pb-1">
-            <div className="grid grid-cols-1 gap-3 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 2xl:grid-cols-5">
-              {Array.from({ length: 15 }).map((_, index) => (
-                <Skeleton key={index} className="h-38 w-full" />
-              ))}
+            <div className="w-full overflow-x-auto rounded-xl border bg-card/65 backdrop-blur-md">
+              <table className="w-full text-left text-sm border-collapse min-w-[750px]">
+                <thead className="bg-muted/40 text-xs font-semibold uppercase tracking-wider text-muted-foreground">
+                  <tr>
+                    <th className="w-12 px-4 py-3 text-center font-semibold text-muted-foreground">#</th>
+                    <th className="px-4 py-3">User</th>
+                    <th className="px-4 py-3">Active Plugin</th>
+                    <th className="px-4 py-3 text-right">Sessions</th>
+                    <th className="px-4 py-3 text-right">Syncs</th>
+                    <th className="px-4 py-3 text-right">Plugin Use</th>
+                    <th className="px-4 py-3 text-right">Onboarded</th>
+                    <th className="px-4 py-3 text-right">Last Active</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {Array.from({ length: 12 }).map((_, index) => (
+                    <tr key={index} className="border-t last:border-b-0">
+                      <td className="w-12 px-4 py-3 text-center">
+                        <Skeleton className="h-4 w-6 mx-auto" />
+                      </td>
+                      <td className="px-4 py-3">
+                        <div className="flex flex-col gap-1.5">
+                          <Skeleton className="h-4 w-32" />
+                          <Skeleton className="h-3.5 w-20" />
+                        </div>
+                      </td>
+                      <td className="px-4 py-3">
+                        <Skeleton className="h-5 w-24 rounded-full" />
+                      </td>
+                      <td className="px-4 py-3">
+                        <div className="flex justify-end">
+                          <Skeleton className="h-4 w-8" />
+                        </div>
+                      </td>
+                      <td className="px-4 py-3">
+                        <div className="flex justify-end">
+                          <Skeleton className="h-4 w-8" />
+                        </div>
+                      </td>
+                      <td className="px-4 py-3">
+                        <div className="flex justify-end">
+                          <Skeleton className="h-4 w-8" />
+                        </div>
+                      </td>
+                      <td className="px-4 py-3">
+                        <div className="flex justify-end">
+                          <Skeleton className="h-4 w-36" />
+                        </div>
+                      </td>
+                      <td className="px-4 py-3">
+                        <div className="flex justify-end">
+                          <Skeleton className="h-4 w-36" />
+                        </div>
+                      </td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
             </div>
           </div>
         ) : filteredItems.length === 0 ? (
@@ -1157,23 +1202,127 @@ export default function AllUsers() {
             }`}
           >
             <div className="min-h-0 overflow-y-auto px-1 pt-2 pb-1">
-              <div
-                className={`grid grid-cols-1 gap-3 sm:grid-cols-2 lg:grid-cols-3 ${
-                  hasActivityCard
-                    ? "xl:grid-cols-3"
-                    : "xl:grid-cols-4 2xl:grid-cols-5"
-                }`}
-              >
-                {filteredItems.map((item) => (
-                  <UserSummaryCard
-                    key={item.autodeskUserName}
-                    item={item}
-                    isSelected={
-                      selectedUser?.autodeskUserName === item.autodeskUserName
-                    }
-                    onClick={() => void loadUserActivity(item)}
-                  />
-                ))}
+              <div className="w-full overflow-x-auto rounded-xl border bg-card/65 backdrop-blur-md">
+                <table className="w-full text-left text-sm border-collapse min-w-[750px]">
+                  <thead className="bg-muted/40 text-xs font-semibold uppercase tracking-wider text-muted-foreground">
+                    <tr>
+                      <th className="w-12 px-4 py-3 text-center font-semibold text-muted-foreground">#</th>
+                      {renderSortHeader("user", "User")}
+                      {renderSortHeader("activePlugin", "Active Plugin")}
+                      {renderSortHeader("sessionsCount", "Sessions", "right")}
+                      {renderSortHeader("syncsCount", "Syncs", "right")}
+                      {renderSortHeader("pluginUseCount", "Plugin Use", "right")}
+                      {renderSortHeader("firstActiveAt", "Onboarded", "right")}
+                      {renderSortHeader("lastActiveAt", "Last Active", "right")}
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {sortedItems.map((item, index) => {
+                      const displayName = item.fullName?.trim() || item.autodeskUserName;
+                      const firstActiveLabel = item.firstActiveAt
+                        ? format(new Date(item.firstActiveAt), "dd MMM yyyy, hh:mm a")
+                        : "-";
+                      const lastActiveLabel = item.lastActiveAt
+                        ? format(new Date(item.lastActiveAt), "dd MMM yyyy, hh:mm a")
+                        : "-";
+
+                      const pluginBadges =
+                        item.pluginVersionDetails && item.pluginVersionDetails.length > 0
+                          ? Array.from(
+                              item.pluginVersionDetails.reduce(
+                                (latestByRevit, detail) => {
+                                  for (const revitVersion of detail.revitVersions) {
+                                    const current = latestByRevit.get(revitVersion);
+                                    if (
+                                      !current ||
+                                      compareVersionStrings(detail.pluginVersion, current) > 0
+                                    ) {
+                                      latestByRevit.set(revitVersion, detail.pluginVersion);
+                                    }
+                                  }
+                                  return latestByRevit;
+                                },
+                                new Map<string, string>(),
+                              ),
+                            )
+                              .sort(([leftRevit, leftPlugin], [rightRevit, rightPlugin]) => {
+                                const revitComparison = compareVersionStrings(leftRevit, rightRevit);
+                                if (revitComparison !== 0) {
+                                  return revitComparison;
+                                }
+                                return compareVersionStrings(leftPlugin, rightPlugin);
+                              })
+                              .map(([revitVersion, pluginVersion]) => ({
+                                key: `${revitVersion}-${pluginVersion}`,
+                                label: `v${pluginVersion} • Revit ${revitVersion}`,
+                              }))
+                          : item.pluginVersions.map((pluginVersion) => ({
+                              key: pluginVersion,
+                              label: `v${pluginVersion}`,
+                            }));
+
+                      const isSelected = selectedUser?.autodeskUserName === item.autodeskUserName;
+
+                      return (
+                        <tr
+                          key={item.autodeskUserName}
+                          onClick={() => void loadUserActivity(item)}
+                          className={cn(
+                            "border-t last:border-b-0 transition-colors cursor-pointer",
+                            isSelected
+                              ? "bg-blue-500/10 dark:bg-blue-400/10 hover:bg-blue-500/15 font-medium"
+                              : "hover:bg-muted/40"
+                          )}
+                        >
+                          <td className="w-12 px-4 py-3 text-center text-xs font-semibold text-muted-foreground/60 tabular-nums">
+                            {index + 1}
+                          </td>
+                          <td className="px-4 py-3">
+                            <div className="flex flex-col">
+                              <span className="font-semibold text-foreground leading-tight">
+                                {displayName}
+                              </span>
+                              <span className="text-xs text-muted-foreground mt-0.5">
+                                @{item.autodeskUserName}
+                              </span>
+                            </div>
+                          </td>
+                          <td className="px-4 py-3">
+                            {pluginBadges.length > 0 ? (
+                              <div className="flex flex-wrap gap-1">
+                                {pluginBadges.map((badge) => (
+                                  <span
+                                    key={badge.key}
+                                    className="inline-flex rounded-full border border-amber-300 bg-amber-50 px-2 py-0.5 text-[10px] font-medium text-amber-800 dark:border-amber-700 dark:bg-amber-950/50 dark:text-amber-400"
+                                  >
+                                    {badge.label}
+                                  </span>
+                                ))}
+                              </div>
+                            ) : (
+                              <span className="text-xs text-muted-foreground">-</span>
+                            )}
+                          </td>
+                          <td className="px-4 py-3 text-right tabular-nums font-semibold">
+                            {item.sessionsCount}
+                          </td>
+                          <td className="px-4 py-3 text-right tabular-nums font-semibold">
+                            {item.syncsCount}
+                          </td>
+                          <td className="px-4 py-3 text-right tabular-nums font-semibold">
+                            {item.pluginUseCount}
+                          </td>
+                          <td className="px-4 py-3 text-right tabular-nums text-muted-foreground whitespace-nowrap text-xs">
+                            {firstActiveLabel}
+                          </td>
+                          <td className="px-4 py-3 text-right tabular-nums text-muted-foreground whitespace-nowrap text-xs">
+                            {lastActiveLabel}
+                          </td>
+                        </tr>
+                      );
+                    })}
+                  </tbody>
+                </table>
               </div>
             </div>
 

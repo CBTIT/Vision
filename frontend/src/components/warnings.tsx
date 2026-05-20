@@ -32,7 +32,7 @@ type SortDirection = "asc" | "desc";
 type ViewMode = "table" | "chart";
 
 function chartTickFill(isDark: boolean): string {
-  return isDark ? "#a3a3a3" : "#57534e";
+  return isDark ? "#a3a3a3" : "#475569";
 }
 
 const SERIES_COLORS = [
@@ -291,8 +291,8 @@ function ModelWarningsCombinedChartView({
 
   const { isDark } = useTheme();
   const tickFill = chartTickFill(isDark);
-  const axisStroke = isDark ? "#4b5563" : "#6b7280";
-  const gridStroke = isDark ? "#374151" : "#d1d5db";
+  const axisStroke = isDark ? "#4b5563" : "#94a3b8";
+  const gridStroke = isDark ? "#374151" : "#e2e8f0";
   const pointRingStroke = isDark ? "#0f172a" : "#ffffff";
 
   const hasAnyPoint = rows.length > 0;
@@ -454,8 +454,8 @@ function ModelWarningsTrendChart({
   const xTicks = getAdaptiveTicks(chartData);
   const { isDark } = useTheme();
   const tickFill = chartTickFill(isDark);
-  const axisStroke = isDark ? "#4b5563" : "#6b7280";
-  const gridStroke = isDark ? "#374151" : "#d1d5db";
+  const axisStroke = isDark ? "#4b5563" : "#94a3b8";
+  const gridStroke = isDark ? "#374151" : "#e2e8f0";
   const pointRingStroke = isDark ? "#0f172a" : "#ffffff";
 
   return (

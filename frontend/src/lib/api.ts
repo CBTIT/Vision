@@ -81,6 +81,7 @@ export type UserSummaryItem = {
     revitVersions: string[];
   }>;
   lastActiveAt?: string;
+  firstActiveAt?: string;
 };
 
 export type ActiveUserItem = {
@@ -92,6 +93,8 @@ export type ActiveUserItem = {
   openDocs: Array<{
     sessionId: string;
     modelName: string;
+    sessionStartAt?: string | null;
+    syncsCount?: number;
   }>;
   activeDocId?: string | null;
   activeDocName?: string | null;
@@ -282,6 +285,7 @@ export type ActiveProjectUserRow = {
   sessionId: string | null;
   sessionStartAt: string | null;
   durationSeconds: number | null;
+  syncsCount: number;
 };
 
 export async function fetchActiveProjectUsers(projectName: string): Promise<{

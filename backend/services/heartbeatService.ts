@@ -100,24 +100,48 @@ export const getActiveUsers = async () => {
 
   const openDocSessionIds = collectOpenDocSessionIds(active);
   const { resolveSession } =
-    await loadSessionResolverForHeartbeatOpenDocs(openDocSessionIds);
+    await loadSessionResolverForHeartbeatOpenDocs(openDocSessionIds, active);
 
   return active.map((item, index) => {
     const resolvedUsername = resolvedUsernames[index] ?? "";
 
     const projectKeysFromOpenDocs: string[] = [];
     const seenProjectKey = new Set<string>();
+    const enrichedOpenDocs: Array<{
+      sessionId: string;
+      modelName: string;
+      sessionStartAt: string | null;
+      syncsCount: number;
+    }> = [];
+
     if (Array.isArray(item.openDocs)) {
       for (const od of item.openDocs) {
         if (!od || typeof od !== "object") continue;
-        const sid = (od as { sessionId?: unknown }).sessionId;
-        if (typeof sid !== "string" || !sid.trim()) continue;
-        const sessionDoc = resolveSession(sid.trim());
+        const open = od as { sessionId?: unknown; modelName?: unknown };
+        const sid = typeof open.sessionId === "string" ? open.sessionId.trim() : "";
+        if (!sid) continue;
+
+        const machine = typeof item.machine === "string" ? item.machine : "";
+        const username = typeof item.autodeskUserName === "string" ? item.autodeskUserName : "";
+        const sessionDoc = resolveSession(sid, machine, username);
         const pk = resolveProjectKeyFromSessionDoc(sessionDoc);
         if (!seenProjectKey.has(pk)) {
           seenProjectKey.add(pk);
           projectKeysFromOpenDocs.push(pk);
         }
+
+        const sessionStartAt = sessionDocumentWorkStart(sessionDoc ?? null);
+        const syncsCount =
+          sessionDoc && Array.isArray(sessionDoc.syncDatabaseIds)
+            ? sessionDoc.syncDatabaseIds.length
+            : 0;
+
+        enrichedOpenDocs.push({
+          sessionId: sid,
+          modelName: typeof open.modelName === "string" ? open.modelName.trim() : "",
+          sessionStartAt: sessionStartAt ? sessionStartAt.toISOString() : null,
+          syncsCount,
+        });
       }
     }
 
@@ -125,6 +149,7 @@ export const getActiveUsers = async () => {
       ...item,
       fullName: fullNameMap.get(resolvedUsername) ?? "",
       projectKeysFromOpenDocs,
+      openDocs: enrichedOpenDocs,
     };
   });
 };
@@ -160,6 +185,10 @@ type LeanSessionForHeartbeat = SessionProjectSource & {
   openingReadyTime?: unknown;
   dateTime?: unknown;
   _id?: unknown;
+  syncDatabaseIds?: unknown;
+  deviceName?: unknown;
+  autodeskUserName?: unknown;
+  closingTime?: unknown;
 };
 
 /**
@@ -170,9 +199,18 @@ type LeanSessionForHeartbeat = SessionProjectSource & {
  */
 async function loadSessionResolverForHeartbeatOpenDocs(
   rawSessionIds: string[],
+  activeHeartbeats: Array<{ machine?: unknown; autodeskUserName?: unknown }>
 ): Promise<{
-  resolveSession: (heartbeatSessionId: string) => LeanSessionForHeartbeat | undefined;
-  sessionStart: (heartbeatSessionId: string) => Date | null;
+  resolveSession: (
+    heartbeatSessionId: string,
+    machine: string,
+    username: string
+  ) => LeanSessionForHeartbeat | undefined;
+  sessionStart: (
+    heartbeatSessionId: string,
+    machine: string,
+    username: string
+  ) => Date | null;
 }> {
   const unique = [...new Set(rawSessionIds.map((s) => s.trim()).filter(Boolean))];
   if (unique.length === 0) {
@@ -212,7 +250,51 @@ async function loadSessionResolverForHeartbeatOpenDocs(
     fileName: 1,
     openingReadyTime: 1,
     dateTime: 1,
+    syncDatabaseIds: 1,
+    deviceName: 1,
+    autodeskUserName: 1,
+    closingTime: 1,
   } as const;
+
+  const uniqueMachines = [
+    ...new Set(
+      activeHeartbeats
+        .map((h) => (typeof h.machine === "string" ? h.machine.trim().toLowerCase() : ""))
+        .filter(Boolean)
+    )
+  ];
+  const uniqueUsernames = [
+    ...new Set(
+      activeHeartbeats
+        .map((h) => (typeof h.autodeskUserName === "string" ? h.autodeskUserName.trim().toLowerCase() : ""))
+        .filter(Boolean)
+    )
+  ];
+
+  const machineRegexes = uniqueMachines.map((m) => new RegExp(`^${escapeRegex(m)}$`, "i"));
+  const usernameRegexes = uniqueUsernames.map((u) => new RegExp(`^${escapeRegex(u)}$`, "i"));
+
+  const filterOr = [
+    { closingTime: { $in: [null, ""] } },
+    { dateTime: { $gt: new Date(Date.now() - 3 * 24 * 60 * 60 * 1000) } }
+  ];
+  if (machineRegexes.length > 0) {
+    filterOr.push({ deviceName: { $in: machineRegexes } } as any);
+  }
+  if (usernameRegexes.length > 0) {
+    filterOr.push({ autodeskUserName: { $in: usernameRegexes } } as any);
+  }
+
+  const modelQuery = orModel
+    ? {
+        $and: [
+          orModel,
+          {
+            $or: filterOr
+          }
+        ]
+      }
+    : null;
 
   const [byMongoIdDocs, byModelDocs] = await Promise.all([
     mongoIdStrings.length > 0
@@ -224,41 +306,101 @@ async function loadSessionResolverForHeartbeatOpenDocs(
           .select(sessionSelect)
           .lean()
       : [],
-    orModel
-      ? RevitSession.find(orModel)
+    modelQuery
+      ? RevitSession.find(modelQuery)
           .sort({ dateTime: -1 })
           .select(sessionSelect)
           .lean()
       : [],
   ]);
 
-  const latestByNormalizedModelId = new Map<string, LeanSessionForHeartbeat>();
-  for (const doc of byModelDocs) {
-    const mid =
-      typeof doc.modelId === "string" ? normalizeModelId(doc.modelId) : "";
-    if (mid && !latestByNormalizedModelId.has(mid)) {
-      latestByNormalizedModelId.set(mid, doc as LeanSessionForHeartbeat);
-    }
-  }
-
   const byMongoId = new Map<string, LeanSessionForHeartbeat>();
   for (const doc of byMongoIdDocs) {
     byMongoId.set(String(doc._id), doc as LeanSessionForHeartbeat);
   }
 
+  const sessions = byModelDocs as unknown as LeanSessionForHeartbeat[];
+
   function resolveSession(
     heartbeatSessionId: string,
+    machine: string,
+    username: string
   ): LeanSessionForHeartbeat | undefined {
     const t = heartbeatSessionId.trim();
     if (!t) return undefined;
+    
     const fromMongo = byMongoId.get(t);
     if (fromMongo) return fromMongo;
-    const mk = normalizeModelId(t);
-    return latestByNormalizedModelId.get(mk);
+
+    const mid = normalizeModelId(t).toLowerCase();
+    const mName = machine.trim().toLowerCase();
+    const uName = username.trim().toLowerCase();
+
+    // Filter candidate sessions matching this modelId
+    const candidates = sessions.filter((s) => {
+      const sMid = typeof s.modelId === "string" ? normalizeModelId(s.modelId).toLowerCase() : "";
+      return sMid === mid;
+    });
+
+    if (candidates.length === 0) return undefined;
+
+    // 1. Active session matching both machine and username
+    let best = candidates.find((s) => {
+      const isClosed = typeof s.closingTime === "string" && s.closingTime !== "";
+      const sMachine = typeof s.deviceName === "string" ? s.deviceName.trim().toLowerCase() : "";
+      const sUser = typeof s.autodeskUserName === "string" ? s.autodeskUserName.trim().toLowerCase() : "";
+      return !isClosed && sMachine === mName && sUser === uName;
+    });
+    if (best) return best;
+
+    // 2. Active session matching machine
+    best = candidates.find((s) => {
+      const isClosed = typeof s.closingTime === "string" && s.closingTime !== "";
+      const sMachine = typeof s.deviceName === "string" ? s.deviceName.trim().toLowerCase() : "";
+      return !isClosed && sMachine === mName;
+    });
+    if (best) return best;
+
+    // 3. Active session matching username
+    best = candidates.find((s) => {
+      const isClosed = typeof s.closingTime === "string" && s.closingTime !== "";
+      const sUser = typeof s.autodeskUserName === "string" ? s.autodeskUserName.trim().toLowerCase() : "";
+      return !isClosed && sUser === uName;
+    });
+    if (best) return best;
+
+    // 4. Any session matching both machine and username
+    best = candidates.find((s) => {
+      const sMachine = typeof s.deviceName === "string" ? s.deviceName.trim().toLowerCase() : "";
+      const sUser = typeof s.autodeskUserName === "string" ? s.autodeskUserName.trim().toLowerCase() : "";
+      return sMachine === mName && sUser === uName;
+    });
+    if (best) return best;
+
+    // 5. Any session matching machine
+    best = candidates.find((s) => {
+      const sMachine = typeof s.deviceName === "string" ? s.deviceName.trim().toLowerCase() : "";
+      return sMachine === mName;
+    });
+    if (best) return best;
+
+    // 6. Any session matching username
+    best = candidates.find((s) => {
+      const sUser = typeof s.autodeskUserName === "string" ? s.autodeskUserName.trim().toLowerCase() : "";
+      return sUser === uName;
+    });
+    if (best) return best;
+
+    // 7. Fallback to latest session for this model
+    return candidates[0];
   }
 
-  function sessionStart(heartbeatSessionId: string): Date | null {
-    return sessionDocumentWorkStart(resolveSession(heartbeatSessionId) ?? null);
+  function sessionStart(
+    heartbeatSessionId: string,
+    machine: string,
+    username: string
+  ): Date | null {
+    return sessionDocumentWorkStart(resolveSession(heartbeatSessionId, machine, username) ?? null);
   }
 
   return { resolveSession, sessionStart };
@@ -365,12 +507,12 @@ export const getActiveProjects = async (): Promise<ActiveProjectSummary[]> => {
     dateTime: { $gt: cutoff },
     openDocs: { $ne: [] },
   })
-    .select({ autodeskUserName: 1, activeProjectName: 1, openDocs: 1 })
+    .select({ autodeskUserName: 1, machine: 1, activeProjectName: 1, openDocs: 1 })
     .lean();
 
   const openDocSessionIds = collectOpenDocSessionIds(active);
   const { resolveSession } =
-    await loadSessionResolverForHeartbeatOpenDocs(openDocSessionIds);
+    await loadSessionResolverForHeartbeatOpenDocs(openDocSessionIds, active);
 
   type ProjectAgg = {
     users: Set<string>;
@@ -394,8 +536,10 @@ export const getActiveProjects = async (): Promise<ActiveProjectSummary[]> => {
       const modelName =
         typeof open.modelName === "string" ? open.modelName.trim() : "";
 
+      const machine = typeof item.machine === "string" ? item.machine : "";
+      const username = typeof item.autodeskUserName === "string" ? item.autodeskUserName : "";
       const sessionDoc = sessionIdRaw
-        ? resolveSession(sessionIdRaw)
+        ? resolveSession(sessionIdRaw, machine, username)
         : undefined;
 
       const label = displayModelLabel(sessionDoc, modelName);
@@ -449,23 +593,36 @@ export const getActiveProjects = async (): Promise<ActiveProjectSummary[]> => {
 };
 
 function pickOpenDocInProject(
-  hb: { openDocs?: unknown },
+  hb: { openDocs?: unknown; machine?: unknown; autodeskUserName?: unknown },
   projectKey: string,
-  resolveSession: (heartbeatSessionId: string) => SessionProjectSource | undefined,
+  resolveSession: (heartbeatSessionId: string, machine: string, username: string) => SessionProjectSource | undefined,
 ): { sessionId: string; modelName: string } | null {
   if (!Array.isArray(hb.openDocs)) return null;
+  const machine = typeof hb.machine === "string" ? hb.machine : "";
+  const username = typeof hb.autodeskUserName === "string" ? hb.autodeskUserName : "";
   for (const od of hb.openDocs) {
     if (!od || typeof od !== "object") continue;
     const open = od as { sessionId?: unknown; modelName?: unknown };
     const sessionIdRaw =
       typeof open.sessionId === "string" ? open.sessionId.trim() : "";
     if (!sessionIdRaw) continue;
-    const sessionDoc = resolveSession(sessionIdRaw);
+    const sessionDoc = resolveSession(sessionIdRaw, machine, username);
     const modelName =
       typeof open.modelName === "string" ? open.modelName.trim() : "";
     const pk = resolveProjectKeyFromSessionDoc(sessionDoc);
     if (pk !== projectKey) continue;
     return { sessionId: sessionIdRaw, modelName };
+  }
+  return null;
+}
+
+function parseDate(val: unknown): Date | null {
+  if (val instanceof Date) {
+    return Number.isNaN(val.getTime()) ? null : val;
+  }
+  if (typeof val === "string" || typeof val === "number") {
+    const d = new Date(val);
+    return Number.isNaN(d.getTime()) ? null : d;
   }
   return null;
 }
@@ -477,15 +634,9 @@ function sessionDocumentWorkStart(
   } | null,
 ): Date | null {
   if (!s) return null;
-  const ready = s.openingReadyTime;
-  const dt = s.dateTime;
-  if (ready instanceof Date && !Number.isNaN(ready.getTime())) {
-    return ready;
-  }
-  if (dt instanceof Date && !Number.isNaN(dt.getTime())) {
-    return dt;
-  }
-  return null;
+  const ready = parseDate(s.openingReadyTime);
+  if (ready) return ready;
+  return parseDate(s.dateTime);
 }
 
 export type ActiveProjectUserRow = {
@@ -497,6 +648,7 @@ export type ActiveProjectUserRow = {
   sessionId: string | null;
   sessionStartAt: string | null;
   durationSeconds: number | null;
+  syncsCount: number;
 };
 
 /**
@@ -528,7 +680,7 @@ export const getActiveProjectUsers = async (
 
   const openDocSessionIds = collectOpenDocSessionIds(active);
   const { resolveSession, sessionStart } =
-    await loadSessionResolverForHeartbeatOpenDocs(openDocSessionIds);
+    await loadSessionResolverForHeartbeatOpenDocs(openDocSessionIds, active);
 
   const forProject = active.filter((h) =>
     pickOpenDocInProject(h, projectKey, resolveSession),
@@ -565,13 +717,13 @@ export const getActiveProjectUsers = async (
     const machine = typeof hb.machine === "string" ? hb.machine.trim() : "";
     const revitVersion =
       typeof hb.revitVersion === "string" ? hb.revitVersion.trim() : "";
-    const sessionDocForRow = resolveSession(picked.sessionId);
+    const sessionDocForRow = resolveSession(picked.sessionId, machine, autodeskUserName);
     const activeModelName = sessionDocForRow
       ? displayModelLabel(sessionDocForRow, picked.modelName)
       : picked.modelName || null;
 
     const sessionId = picked.sessionId;
-    const sessionStartAt = sessionId ? sessionStart(sessionId) : null;
+    const sessionStartAt = sessionId ? sessionStart(sessionId, machine, autodeskUserName) : null;
 
     let durationSeconds: number | null = null;
     if (sessionStartAt) {
@@ -585,6 +737,11 @@ export const getActiveProjectUsers = async (
         ? fullNameRaw.trim()
         : "";
 
+    const syncsCount =
+      sessionDocForRow && Array.isArray(sessionDocForRow.syncDatabaseIds)
+        ? sessionDocForRow.syncDatabaseIds.length
+        : 0;
+
     rows.push({
       autodeskUserName,
       fullName,
@@ -596,6 +753,7 @@ export const getActiveProjectUsers = async (
         ? sessionStartAt.toISOString()
         : null,
       durationSeconds,
+      syncsCount,
     });
   }
 

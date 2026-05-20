@@ -1,5 +1,6 @@
 import RevitSession from "../models/RevitSession.js";
 import UserMappings from "../models/UserMappings.js";
+import RevitSyncEvent from "../models/RevitSyncEvents.js";
 function escapeRegex(value) {
     return value.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
 }
@@ -331,4 +332,144 @@ export const getModelWarningsTimeSeries = async (modelId, from, to) => {
         date: row._id,
         warningCount: row.warningCount,
     }));
+};
+export const getModelSummaryHistory = async (modelId, from, to) => {
+    const selectedIdentifier = modelId.trim();
+    const normalizedModelId = normalizeModelId(modelId);
+    if (!selectedIdentifier || !normalizedModelId) {
+        console.log("getModelSummaryHistory: empty modelId");
+        return [];
+    }
+    console.log("getModelSummaryHistory query:", { selectedIdentifier, normalizedModelId, from, to });
+    const matchStage = {
+        $or: [
+            {
+                modelId: {
+                    $regex: `^\\{?${escapeRegex(normalizedModelId)}\\}?$`,
+                    $options: "i",
+                },
+            },
+            {
+                fileName: {
+                    $regex: `^${escapeRegex(selectedIdentifier)}$`,
+                    $options: "i",
+                },
+            },
+        ],
+    };
+    if (from || to) {
+        const dateFilter = {};
+        if (from) {
+            dateFilter["$gte"] = new Date(from);
+        }
+        if (to) {
+            const endExclusive = new Date(to);
+            endExclusive.setDate(endExclusive.getDate() + 1);
+            dateFilter["$lt"] = endExclusive;
+        }
+        matchStage["dateTime"] = dateFilter;
+    }
+    const sessionRows = await RevitSession.aggregate([
+        { $match: matchStage },
+        {
+            $group: {
+                _id: {
+                    $dateToString: {
+                        format: "%Y-%m-%d",
+                        date: "$dateTime",
+                        timezone: "UTC",
+                    },
+                },
+                maxFileSize: { $max: { $ifNull: ["$fileSize", 0] } },
+                openingDurations: {
+                    $push: { $ifNull: ["$openingDuration", 0] },
+                },
+                maxWarningCount: { $max: { $ifNull: ["$warningCount", 0] } },
+            },
+        },
+        { $sort: { _id: 1 } },
+    ]);
+    console.log("getModelSummaryHistory sessionRows:", sessionRows.length);
+    const syncMatchStage = {
+        $or: [
+            {
+                modelId: {
+                    $regex: `^\\{?${escapeRegex(normalizedModelId)}\\}?$`,
+                    $options: "i",
+                },
+            },
+            {
+                fileName: {
+                    $regex: `^${escapeRegex(selectedIdentifier)}$`,
+                    $options: "i",
+                },
+            },
+        ],
+    };
+    if (from || to) {
+        const dateFilter = {};
+        if (from) {
+            dateFilter["$gte"] = new Date(from);
+        }
+        if (to) {
+            const endExclusive = new Date(to);
+            endExclusive.setDate(endExclusive.getDate() + 1);
+            dateFilter["$lt"] = endExclusive;
+        }
+        syncMatchStage["dateTime"] = dateFilter;
+    }
+    const syncRows = await RevitSyncEvent.aggregate([
+        { $match: syncMatchStage },
+        {
+            $group: {
+                _id: {
+                    $dateToString: {
+                        format: "%Y-%m-%d",
+                        date: "$dateTime",
+                        timezone: "UTC",
+                    },
+                },
+                syncDurations: {
+                    $push: { $ifNull: ["$duration", 0] },
+                },
+            },
+        },
+        { $sort: { _id: 1 } },
+    ]);
+    console.log("getModelSummaryHistory syncRows:", syncRows.length);
+    function median(values) {
+        if (values.length === 0)
+            return 0;
+        const sorted = [...values].sort((a, b) => a - b);
+        const mid = Math.floor(sorted.length / 2);
+        if (sorted.length % 2 === 0) {
+            return (sorted[mid - 1] + sorted[mid]) / 2;
+        }
+        return sorted[mid];
+    }
+    const dateSet = new Set();
+    const fileSizeMap = new Map();
+    const openingDurationMap = new Map();
+    const syncDurationMap = new Map();
+    const warningCountMap = new Map();
+    for (const row of sessionRows) {
+        dateSet.add(row._id);
+        fileSizeMap.set(row._id, row.maxFileSize);
+        openingDurationMap.set(row._id, median(row.openingDurations));
+        warningCountMap.set(row._id, row.maxWarningCount);
+    }
+    for (const row of syncRows) {
+        dateSet.add(row._id);
+        syncDurationMap.set(row._id, median(row.syncDurations));
+    }
+    const dates = [...dateSet].sort((a, b) => a.localeCompare(b));
+    return dates
+        .map((date) => ({
+        date,
+        maxFileSize: fileSizeMap.get(date) ?? 0,
+        maxOpeningDuration: openingDurationMap.get(date) ?? 0,
+        maxSyncDuration: syncDurationMap.get(date) ?? 0,
+        maxWarningCount: warningCountMap.get(date) ?? 0,
+    }))
+        .filter((point) => point.maxFileSize > 0);
 };

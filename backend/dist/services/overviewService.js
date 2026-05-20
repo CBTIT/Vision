@@ -45,8 +45,13 @@ const getSessionDailyCounts = async (startInclusive, endExclusive) => {
 const getSyncDailyCounts = async (startInclusive, endExclusive) => {
     const rows = await RevitSyncEvent.aggregate([
         {
+            $addFields: {
+                _syncDate: { $ifNull: ["$dateTime", "$date"] },
+            },
+        },
+        {
             $match: {
-                date: {
+                _syncDate: {
                     $gte: startInclusive,
                     $lt: endExclusive,
                 },
@@ -57,7 +62,7 @@ const getSyncDailyCounts = async (startInclusive, endExclusive) => {
                 _id: {
                     $dateToString: {
                         format: "%Y-%m-%d",
-                        date: "$date",
+                        date: "$_syncDate",
                         timezone: "UTC",
                     },
                 },
@@ -100,19 +105,25 @@ export const getOverviewDateBounds = async () => {
             .sort({ dateTime: -1 })
             .select({ dateTime: 1 })
             .lean(),
-        RevitSyncEvent.findOne({ date: { $exists: true } })
-            .sort({ date: 1 })
-            .select({ date: 1 })
+        RevitSyncEvent.findOne({ $or: [{ dateTime: { $exists: true } }, { date: { $exists: true } }] })
+            .sort({ dateTime: 1, date: 1 })
+            .select({ dateTime: 1, date: 1 })
             .lean(),
-        RevitSyncEvent.findOne({ date: { $exists: true } })
-            .sort({ date: -1 })
-            .select({ date: 1 })
+        RevitSyncEvent.findOne({ $or: [{ dateTime: { $exists: true } }, { date: { $exists: true } }] })
+            .sort({ dateTime: -1, date: -1 })
+            .select({ dateTime: 1, date: 1 })
             .lean(),
     ]);
-    const starts = [sessionFirst?.dateTime, syncFirst?.date]
+    const resolveSyncBound = (doc) => {
+        if (!doc)
+            return null;
+        const raw = (doc.dateTime ?? doc.date);
+        return raw instanceof Date && !Number.isNaN(raw.getTime()) ? raw : null;
+    };
+    const starts = [sessionFirst?.dateTime, resolveSyncBound(syncFirst)]
         .filter((value) => value instanceof Date)
         .map((value) => value.getTime());
-    const ends = [sessionLast?.dateTime, syncLast?.date]
+    const ends = [sessionLast?.dateTime, resolveSyncBound(syncLast)]
         .filter((value) => value instanceof Date)
         .map((value) => value.getTime());
     const today = new Date().toISOString().slice(0, 10);

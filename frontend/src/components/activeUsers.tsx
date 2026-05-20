@@ -1,8 +1,8 @@
-import { useCallback, useEffect, useMemo, useState } from "react";
+import { Fragment, useCallback, useEffect, useMemo, useState } from "react";
 import { useLocation, useNavigate } from "react-router-dom";
 import { cn } from "@/lib/utils";
 import { format } from "date-fns";
-import { Eye, FileText, LoaderCircle, UserRound } from "lucide-react";
+import { Eye, FileText, LoaderCircle, ChevronRight, ArrowUpDown, ArrowUp, ArrowDown } from "lucide-react";
 
 import { useHeaderRight } from "./header-context";
 import { useAutoRefresh } from "@/hooks/use-auto-refresh";
@@ -10,6 +10,7 @@ import { RefreshButton } from "@/components/refresh-button";
 import {
   fetchActiveUsers,
   fetchSessionsList,
+  fetchSessionById,
   type ActiveUserItem,
   type SessionListItem,
 } from "@/lib/api";
@@ -240,6 +241,35 @@ function getActiveSessionId(item: ActiveUserItem): string {
   return item.openDocs[0]?.sessionId || "";
 }
 
+function compareVersionStrings(left: string, right: string): number {
+  const leftParts = left.split(/[^0-9A-Za-z]+/).filter(Boolean);
+  const rightParts = right.split(/[^0-9A-Za-z]+/).filter(Boolean);
+  const maxLength = Math.max(leftParts.length, rightParts.length);
+
+  for (let index = 0; index < maxLength; index += 1) {
+    const leftPart = leftParts[index] ?? "";
+    const rightPart = rightParts[index] ?? "";
+
+    const leftNumber = Number(leftPart);
+    const rightNumber = Number(rightPart);
+    const leftIsNumber = leftPart !== "" && Number.isFinite(leftNumber);
+    const rightIsNumber = rightPart !== "" && Number.isFinite(rightNumber);
+
+    if (leftIsNumber && rightIsNumber && leftNumber !== rightNumber) {
+      return leftNumber - rightNumber;
+    }
+
+    if (leftPart !== rightPart) {
+      return leftPart.localeCompare(rightPart, undefined, { numeric: true });
+    }
+  }
+
+  return left.localeCompare(right, undefined, { numeric: true });
+}
+
+type ActiveUsersSortField = "user" | "machine" | "revit" | "activeProject" | "openDocsCount" | "updatedAt";
+type SortOrder = "asc" | "desc";
+
 export default function ActiveUsers() {
   const location = useLocation();
   const navigate = useNavigate();
@@ -248,6 +278,66 @@ export default function ActiveUsers() {
 
   const [loading, setLoading] = useState(true);
   const [items, setItems] = useState<ActiveUserItem[]>([]);
+  const [expandedUsers, setExpandedUsers] = useState<Record<string, boolean>>({});
+  const [sortField, setSortField] = useState<ActiveUsersSortField>("user");
+  const [sortOrder, setSortOrder] = useState<SortOrder>("asc");
+
+  const toggleUserExpanded = (userId: string) => {
+    setExpandedUsers((prev) => ({
+      ...prev,
+      [userId]: !prev[userId],
+    }));
+  };
+
+  const handleSort = (field: ActiveUsersSortField) => {
+    if (sortField === field) {
+      setSortOrder(sortOrder === "asc" ? "desc" : "asc");
+    } else {
+      setSortField(field);
+      if (field === "user" || field === "machine") {
+        setSortOrder("asc");
+      } else {
+        setSortOrder("desc");
+      }
+    }
+  };
+
+  const renderSortHeader = (
+    field: ActiveUsersSortField,
+    label: string,
+    align: "left" | "right" | "center" = "left",
+  ) => {
+    const isActive = sortField === field;
+    return (
+      <th
+        className={cn(
+          "px-4 py-3 cursor-pointer select-none transition-colors hover:bg-muted/30 group",
+          align === "right" ? "text-right" : align === "center" ? "text-center" : "text-left",
+        )}
+        onClick={() => handleSort(field)}
+      >
+        <div
+          className={cn(
+            "flex items-center gap-1.5",
+            align === "right" ? "justify-end" : align === "center" ? "justify-center" : "justify-start",
+          )}
+        >
+          <span>{label}</span>
+          <span className="inline-flex shrink-0">
+            {isActive ? (
+              sortOrder === "asc" ? (
+                <ArrowUp className="size-3.5 text-primary animate-in fade-in zoom-in duration-200" />
+              ) : (
+                <ArrowDown className="size-3.5 text-primary animate-in fade-in zoom-in duration-200" />
+              )
+            ) : (
+              <ArrowUpDown className="size-3.5 text-muted-foreground/30 group-hover:text-muted-foreground/70 transition-colors duration-200" />
+            )}
+          </span>
+        </div>
+      </th>
+    );
+  };
   const [detailOpen, setDetailOpen] = useState(false);
   const [detailLoading, setDetailLoading] = useState(false);
   const [showMoreDetails, setShowMoreDetails] = useState(false);
@@ -311,6 +401,46 @@ export default function ActiveUsers() {
     });
   }, [items, projectFilter]);
 
+  const sortedItems = useMemo(() => {
+    const sorted = [...filteredItems];
+    sorted.sort((a, b) => {
+      if (sortField === "user") {
+        const nameA = (a.fullName?.trim() || a.autodeskUserName || "").toLowerCase();
+        const nameB = (b.fullName?.trim() || b.autodeskUserName || "").toLowerCase();
+        return sortOrder === "asc" ? nameA.localeCompare(nameB) : nameB.localeCompare(nameA);
+      }
+      if (sortField === "machine") {
+        const machA = (a.machine || "").toLowerCase();
+        const machB = (b.machine || "").toLowerCase();
+        return sortOrder === "asc" ? machA.localeCompare(machB) : machB.localeCompare(machA);
+      }
+      if (sortField === "revit") {
+        const revA = a.revitVersion || "";
+        const revB = b.revitVersion || "";
+        return sortOrder === "asc"
+          ? compareVersionStrings(revA, revB)
+          : compareVersionStrings(revB, revA);
+      }
+      if (sortField === "activeProject") {
+        const projA = (a.activeProjectName || "").toLowerCase();
+        const projB = (b.activeProjectName || "").toLowerCase();
+        return sortOrder === "asc" ? projA.localeCompare(projB) : projB.localeCompare(projA);
+      }
+      if (sortField === "openDocsCount") {
+        const countA = a.openDocs?.length ?? 0;
+        const countB = b.openDocs?.length ?? 0;
+        return sortOrder === "asc" ? countA - countB : countB - countA;
+      }
+      if (sortField === "updatedAt") {
+        const timeA = a.dateTime ? new Date(a.dateTime).getTime() : 0;
+        const timeB = b.dateTime ? new Date(b.dateTime).getTime() : 0;
+        return sortOrder === "asc" ? timeA - timeB : timeB - timeA;
+      }
+      return 0;
+    });
+    return sorted;
+  }, [filteredItems, sortField, sortOrder]);
+
   useEffect(() => {
     if (projectFilter === "all") return;
     if (loading) return;
@@ -371,6 +501,73 @@ export default function ActiveUsers() {
           limit: 1,
           deviceName: machineName,
         });
+
+        if (byMachine.items[0]) {
+          setSelectedSession(byMachine.items[0]);
+          return;
+        }
+      }
+
+      setSelectedSession(null);
+    } catch {
+      setSelectedSession(null);
+    } finally {
+      setDetailLoading(false);
+    }
+  }
+
+  async function openSessionForDoc(
+    item: ActiveUserItem,
+    doc: { sessionId: string; modelName: string },
+  ) {
+    const machineName = typeof item.machine === "string" ? item.machine.trim() : "";
+    const docSessionId = typeof doc.sessionId === "string" ? doc.sessionId.trim() : "";
+    if (!machineName && !docSessionId) return;
+
+    setDetailOpen(true);
+    setDetailLoading(true);
+    setSelectedSession(null);
+
+    try {
+      const looksLikeMongoId = /^[0-9a-fA-F]{24}$/.test(docSessionId);
+      if (looksLikeMongoId) {
+        const byId = await fetchSessionById(docSessionId);
+        if (byId) {
+          setSelectedSession(byId);
+          return;
+        }
+      }
+
+      if (machineName && docSessionId) {
+        const byMachineAndDoc = await fetchSessionsList({
+          page: 1,
+          limit: 1,
+          deviceName: machineName,
+          modelId: docSessionId,
+        });
+
+        if (byMachineAndDoc.items[0]) {
+          setSelectedSession(byMachineAndDoc.items[0]);
+          return;
+        }
+      }
+
+      if (machineName && doc.modelName) {
+        const byMachine = await fetchSessionsList({
+          page: 1,
+          limit: 5,
+          deviceName: machineName,
+        });
+
+        const matchingDoc = byMachine.items.find(
+          (s) =>
+            s.fileName?.toLowerCase() === doc.modelName.toLowerCase() ||
+            s.modelId === docSessionId
+        );
+        if (matchingDoc) {
+          setSelectedSession(matchingDoc);
+          return;
+        }
 
         if (byMachine.items[0]) {
           setSelectedSession(byMachine.items[0]);
@@ -659,10 +856,57 @@ export default function ActiveUsers() {
       </Card>
 
       {loading ? (
-        <div className="grid grid-cols-1 gap-3 md:grid-cols-2 xl:grid-cols-3 2xl:grid-cols-4">
-          {Array.from({ length: 9 }).map((_, index) => (
-            <Skeleton key={index} className="h-52 w-full" />
-          ))}
+        <div className="w-full overflow-x-auto rounded-xl border bg-card/65 backdrop-blur-md px-1 py-1">
+          <table className="w-full text-left text-sm border-collapse min-w-[1000px]">
+            <thead className="bg-muted/40 text-xs font-semibold uppercase tracking-wider text-muted-foreground">
+              <tr>
+                <th className="w-16 px-4 py-3 text-center font-semibold text-muted-foreground">#</th>
+                <th className="px-4 py-3">User</th>
+                <th className="px-4 py-3">Machine</th>
+                <th className="px-4 py-3">Revit</th>
+                <th className="px-4 py-3">Active Document</th>
+                <th className="px-4 py-3 text-center">Open Docs</th>
+                <th className="px-4 py-3 text-center">Last Update</th>
+                <th className="w-28 px-4 py-3 text-center font-semibold text-muted-foreground">Actions</th>
+              </tr>
+            </thead>
+            <tbody>
+              {Array.from({ length: 8 }).map((_, index) => (
+                <tr key={index} className="border-t last:border-b-0">
+                  <td className="w-16 px-4 py-3 text-center">
+                    <Skeleton className="h-4 w-6 mx-auto" />
+                  </td>
+                  <td className="px-4 py-3">
+                    <div className="flex flex-col gap-1.5">
+                      <Skeleton className="h-4 w-32" />
+                      <Skeleton className="h-3.5 w-20" />
+                    </div>
+                  </td>
+                  <td className="px-4 py-3">
+                    <Skeleton className="h-4 w-24" />
+                  </td>
+                  <td className="px-4 py-3">
+                    <Skeleton className="h-5 w-16 rounded-full" />
+                  </td>
+                  <td className="px-4 py-3">
+                    <div className="flex flex-col gap-1">
+                      <Skeleton className="h-4 w-44" />
+                      <Skeleton className="h-3 w-32" />
+                    </div>
+                  </td>
+                  <td className="px-4 py-3 text-center">
+                    <Skeleton className="h-5 w-14 rounded-full mx-auto" />
+                  </td>
+                  <td className="px-4 py-3 text-center">
+                    <Skeleton className="h-4 w-28 mx-auto" />
+                  </td>
+                  <td className="w-28 px-4 py-3 text-center">
+                    <Skeleton className="h-8 w-24 rounded-md mx-auto" />
+                  </td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
         </div>
       ) : items.length === 0 ? (
         <Card>
@@ -678,139 +922,300 @@ export default function ActiveUsers() {
           </CardContent>
         </Card>
       ) : (
-        <div className="grid grid-cols-1 gap-3 md:grid-cols-2 xl:grid-cols-3 2xl:grid-cols-4">
-          {filteredItems.map((item) => {
-            const displayName = item.fullName?.trim() || item.autodeskUserName;
-            const updatedAt = formatDateTime(item.dateTime);
-            const activeSessionId = getActiveSessionId(item);
-            const activeModelId =
-              typeof item.activeDocId === "string"
-                ? item.activeDocId.trim()
-                : "";
-
-            return (
-              <Card
-                key={item._id}
-                className="h-full border-border/90 bg-background/95 shadow-sm"
-              >
-                <CardHeader className="space-y-2 pb-3">
-                  <div className="flex items-start justify-between gap-3">
-                    <div className="min-w-0 flex-1">
-                      <CardTitle className="truncate text-base leading-tight">
-                        {displayName}
-                      </CardTitle>
-                      <p className="mt-1 truncate text-xs text-muted-foreground">
-                        @{item.autodeskUserName}
-                      </p>
-                    </div>
-                    <span className="inline-flex shrink-0 rounded-full border border-emerald-300 bg-emerald-50 px-2 py-0.5 text-[11px] font-semibold text-emerald-700 dark:border-emerald-700 dark:bg-emerald-950/60 dark:text-emerald-400">
-                      Live
-                    </span>
-                  </div>
-
-                  <div className="grid grid-cols-2 gap-2 text-xs">
-                    <div className="rounded-md border bg-muted/20 px-2 py-1.5">
-                      <p className="text-muted-foreground">Machine</p>
-                      <p className="mt-0.5 font-semibold wrap-break-word">
-                        {item.machine}
-                      </p>
-                    </div>
-                    <div className="rounded-md border bg-muted/20 px-2 py-1.5">
-                      <p className="text-muted-foreground">Revit</p>
-                      <p className="mt-0.5 font-semibold wrap-break-word">
-                        {item.revitVersion}
-                      </p>
-                    </div>
-                  </div>
-                </CardHeader>
-
-                <CardContent className="flex h-full flex-col space-y-3 pt-0">
-                  <div className="min-w-0 flex-1">
-                    <p className="mb-2 text-[11px] font-semibold uppercase tracking-wide text-muted-foreground">
-                      Open Documents ({item.openDocs.length})
-                    </p>
-                    {item.openDocs.length === 0 ? (
-                      <p className="text-sm text-muted-foreground">
-                        No open documents.
-                      </p>
-                    ) : (
-                      <div className="grid gap-2">
-                        {item.openDocs.map((doc) => {
-                          const isActive =
-                            !!item.activeDocName &&
-                            doc.modelName === item.activeDocName;
-
-                          return (
-                            <div
-                              key={`${item._id}-${doc.sessionId}-${doc.modelName}`}
-                              className={`rounded-md border px-3 py-2 ${
-                                isActive
-                                  ? "border-emerald-300 bg-emerald-50 dark:border-emerald-700 dark:bg-emerald-950/40"
-                                  : "bg-muted/20"
-                              }`}
-                            >
-                              <div className="flex min-w-0 items-start gap-1.5">
-                                <FileText className="mt-0.5 size-3.5 shrink-0 text-muted-foreground" />
-                                <p className="min-w-0 break-all text-sm font-medium">
-                                  {doc.modelName || "Untitled Model"}
-                                </p>
-                              </div>
-                              <p className="mt-1 break-all text-[11px] text-muted-foreground">
-                                Session: {doc.sessionId || "-"}
-                              </p>
-
-                              {isActive && (
-                                <div className="mt-2 rounded-md border border-blue-200 bg-blue-50/70 px-2.5 py-2 dark:border-blue-800 dark:bg-blue-950/50">
-                                  <p className="text-[11px] uppercase tracking-wide text-blue-700 dark:text-blue-400">
-                                    Active View
-                                  </p>
-                                  <div className="mt-1 flex min-w-0 items-start gap-1.5">
-                                    <Eye className="mt-0.5 size-3.5 shrink-0 text-blue-900 dark:text-blue-200" />
-                                    <p className="min-w-0 break-all text-sm font-semibold text-blue-900 dark:text-blue-200">
-                                      {item.activeViewName || "-"}
-                                    </p>
-                                  </div>
-                                  <p className="break-all text-[11px] text-blue-700/85 dark:text-blue-400/80">
-                                    {item.activeProjectName || "-"}
-                                  </p>
-                                </div>
-                              )}
-                            </div>
-                          );
-                        })}
-                      </div>
-                    )}
-                  </div>
-
-                  <div className="mt-auto flex flex-col gap-2 border-t pt-2.5 sm:flex-row sm:items-center sm:justify-between">
-                    <p className="text-[11px] text-muted-foreground">
-                      Updated {updatedAt}
-                    </p>
-                    <Button
-                      size="sm"
-                      className="w-full sm:w-auto"
-                      onClick={() => void openActiveSession(item)}
-                      disabled={
-                        (!activeSessionId && !activeModelId) || detailLoading
+        <div className="w-full overflow-x-auto rounded-xl border bg-card/65 backdrop-blur-md px-1 py-1">
+          <table className="w-full text-left text-sm border-collapse min-w-[1000px]">
+            <thead className="bg-muted/40 text-xs font-semibold uppercase tracking-wider text-muted-foreground">
+              <tr>
+                <th className="w-16 px-4 py-3 text-center">
+                  <button
+                    type="button"
+                    className="p-1 rounded hover:bg-muted/40 transition-colors"
+                    onClick={() => {
+                      const allExpanded = sortedItems.every((item) => expandedUsers[item._id]);
+                      const nextExpanded: Record<string, boolean> = {};
+                      if (!allExpanded) {
+                        sortedItems.forEach((item) => {
+                          nextExpanded[item._id] = true;
+                        });
                       }
-                    >
-                      {detailLoading ? (
-                        <span className="inline-flex items-center gap-1.5">
-                          <LoaderCircle className="size-3.5 animate-spin" />
-                          Loading
-                        </span>
-                      ) : (
-                        <span className="inline-flex items-center gap-1.5">
-                          <UserRound className="size-3.5" />
-                          See Active Session
-                        </span>
+                      setExpandedUsers(nextExpanded);
+                    }}
+                    title={
+                      sortedItems.every((item) => expandedUsers[item._id])
+                        ? "Collapse All"
+                        : "Expand All"
+                    }
+                  >
+                    <ChevronRight
+                      className={cn(
+                        "size-4 text-muted-foreground transition-transform duration-200",
+                        sortedItems.length > 0 && sortedItems.every((item) => expandedUsers[item._id])
+                          ? "rotate-90 text-primary"
+                          : ""
                       )}
-                    </Button>
-                  </div>
-                </CardContent>
-              </Card>
-            );
-          })}
+                    />
+                  </button>
+                </th>
+                {renderSortHeader("user", "User")}
+                {renderSortHeader("machine", "Machine")}
+                {renderSortHeader("revit", "Revit")}
+                {renderSortHeader("activeProject", "Active Doc/Project")}
+                {renderSortHeader("openDocsCount", "Open Docs", "center")}
+                {renderSortHeader("updatedAt", "Last Update", "center")}
+                <th className="w-28 px-4 py-3 text-center font-semibold text-muted-foreground">Actions</th>
+              </tr>
+            </thead>
+            <tbody>
+              {sortedItems.map((item, index) => {
+                const displayName = item.fullName?.trim() || item.autodeskUserName;
+                const updatedAt = formatDateTime(item.dateTime);
+                const activeSessionId = getActiveSessionId(item);
+                const activeModelId =
+                  typeof item.activeDocId === "string"
+                    ? item.activeDocId.trim()
+                    : "";
+                const isExpanded = !!expandedUsers[item._id];
+
+                return (
+                  <Fragment key={item._id}>
+                    <tr
+                      className={cn(
+                        "border-t transition-colors cursor-pointer",
+                        isExpanded ? "bg-muted/25" : "hover:bg-muted/45"
+                      )}
+                      onClick={() => toggleUserExpanded(item._id)}
+                    >
+                      <td className="w-16 px-4 py-3 text-center">
+                        <div className="flex items-center justify-center gap-2">
+                          <span
+                            className={cn(
+                              "inline-flex transition-transform duration-200",
+                              isExpanded ? "rotate-90" : ""
+                            )}
+                          >
+                            <ChevronRight className="size-4 text-muted-foreground" />
+                          </span>
+                          <span className="text-xs font-semibold text-muted-foreground/60 tabular-nums">
+                            {index + 1}
+                          </span>
+                        </div>
+                      </td>
+                      <td className="px-4 py-3">
+                        <div className="flex flex-col">
+                          <span className="font-semibold text-foreground leading-tight">
+                            {displayName}
+                          </span>
+                          <span className="text-xs text-muted-foreground mt-0.5">
+                            @{item.autodeskUserName}
+                          </span>
+                        </div>
+                      </td>
+                      <td className="px-4 py-3 font-medium text-foreground">
+                        {item.machine}
+                      </td>
+                      <td className="px-4 py-3">
+                        <span className="inline-flex rounded-full border border-amber-300 bg-amber-50 px-2 py-0.5 text-[10px] font-semibold text-amber-800 dark:border-amber-700 dark:bg-amber-950/50 dark:text-amber-400">
+                          {item.revitVersion}
+                        </span>
+                      </td>
+                      <td className="px-4 py-3">
+                        {item.activeDocName ? (
+                          <div className="flex flex-col max-w-sm">
+                            <span className="font-semibold text-foreground leading-tight truncate">
+                              {item.activeDocName}
+                            </span>
+                            <span className="text-xs text-muted-foreground mt-0.5 truncate">
+                              {item.activeProjectName || item.activeViewName || "-"}
+                            </span>
+                          </div>
+                        ) : (
+                          <span className="text-xs text-muted-foreground/60 italic">No active document</span>
+                        )}
+                      </td>
+                      <td className="px-4 py-3 text-center">
+                        <span
+                          className={cn(
+                            "inline-flex items-center justify-center h-6 min-w-12 px-2 rounded-full text-xs font-semibold tabular-nums",
+                            item.openDocs.length > 0
+                              ? "bg-violet-100 text-violet-800 border border-violet-200 dark:bg-violet-950/50 dark:text-violet-400 dark:border-violet-800/80"
+                              : "bg-muted text-muted-foreground border"
+                          )}
+                        >
+                          {item.openDocs.length}
+                        </span>
+                      </td>
+                      <td className="px-4 py-3 text-center text-xs text-muted-foreground/80 tabular-nums whitespace-nowrap">
+                        {updatedAt}
+                      </td>
+                      <td className="w-28 px-4 py-3 text-center">
+                        <Button
+                          size="xs"
+                          className="w-full animate-in fade-in duration-200"
+                          onClick={(e) => {
+                            e.stopPropagation();
+                            void openActiveSession(item);
+                          }}
+                          disabled={
+                            (!activeSessionId && !activeModelId) || detailLoading
+                          }
+                        >
+                          {detailLoading ? (
+                            <LoaderCircle className="size-3 animate-spin" />
+                          ) : (
+                            <Eye className="size-3 mr-1" />
+                          )}
+                          Session
+                        </Button>
+                      </td>
+                    </tr>
+                    {isExpanded && (
+                      <tr key={`${item._id}-docs`} className="bg-muted/5 border-t-0 border-b">
+                        <td colSpan={8} className="px-4 py-2">
+                          <div className="rounded-xl border border-border/80 bg-card/45 p-4 pl-5 ml-12 space-y-3 shadow-md backdrop-blur-md animate-in slide-in-from-top-1 duration-150">
+
+                            {item.openDocs.length === 0 ? (
+                              <p className="text-xs text-muted-foreground italic py-1.5">No open documents.</p>
+                            ) : (
+                              <div className="divide-y divide-border/20">
+                                {item.openDocs.map((doc, idx) => {
+                                  const isDocActive =
+                                    !!item.activeDocName &&
+                                    doc.modelName === item.activeDocName;
+
+                                  return (
+                                    <div
+                                      key={`${item._id}-${doc.sessionId}-${doc.modelName}-${idx}`}
+                                      className={cn(
+                                        "py-2.5 flex flex-col md:flex-row md:items-center justify-between gap-4 transition-all duration-150 pl-3 pr-2.5 rounded-md",
+                                        isDocActive
+                                          ? "bg-emerald-500/5 border-l-2 border-emerald-500 shadow-sm dark:bg-emerald-950/10"
+                                          : "hover:bg-muted/15"
+                                      )}
+                                    >
+                                      {/* Left block: Icon, main view name or background model, and details underneath */}
+                                      <div className="flex items-start gap-3 min-w-0 flex-1">
+                                        {isDocActive ? (
+                                          <Eye className="size-4.5 text-blue-500 shrink-0 mt-0.5" />
+                                        ) : (
+                                          <FileText className="size-4 text-muted-foreground/60 shrink-0 mt-0.5" />
+                                        )}
+                                        <div className="min-w-0 space-y-0.5">
+                                          {/* Main Prominent Data */}
+                                          <div className="flex items-center gap-2 flex-wrap">
+                                            {isDocActive ? (
+                                              <>
+                                                <span className="text-[10px] font-bold text-emerald-600 dark:text-emerald-400 uppercase tracking-wider bg-emerald-500/10 dark:bg-emerald-400/10 px-1.5 py-0.5 rounded shrink-0">
+                                                  Active Focus:
+                                                </span>
+                                                <span className="text-xs font-bold text-foreground break-words">
+                                                  {item.activeViewName || "Unnamed View"}
+                                                </span>
+                                                <span className="inline-flex items-center gap-1 rounded-full border border-emerald-300/40 bg-emerald-100/40 px-1.5 py-0.5 text-[9px] font-bold text-emerald-800 dark:border-emerald-800/40 dark:bg-emerald-950/40 dark:text-emerald-400">
+                                                  <span className="relative flex h-1.5 w-1.5 shrink-0">
+                                                    <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-emerald-400 opacity-75"></span>
+                                                    <span className="relative inline-flex rounded-full h-1.5 w-1.5 bg-emerald-500"></span>
+                                                  </span>
+                                                  Active
+                                                </span>
+                                              </>
+                                            ) : (
+                                              <>
+                                                <span className="text-xs font-semibold text-foreground/80 break-words">
+                                                  {doc.modelName || "Untitled Model"}
+                                                </span>
+                                                <span className="inline-flex items-center rounded-full border border-border/40 bg-muted/40 px-1.5 py-0.5 text-[9px] font-medium text-muted-foreground/75">
+                                                  Background
+                                                </span>
+                                              </>
+                                            )}
+                                          </div>
+
+                                          {/* Minor Details: Model, Project, Started, Syncs */}
+                                          <div className="flex items-center gap-x-2 gap-y-1 text-[10px] text-muted-foreground/75 flex-wrap">
+                                            <span className="flex items-center gap-1">
+                                              <span className="font-semibold text-muted-foreground/60 uppercase text-[9px]">Model:</span>
+                                              <span className="text-foreground/85 font-medium">{doc.modelName || "Untitled"}</span>
+                                            </span>
+                                            {item.activeProjectName && isDocActive && (
+                                              <>
+                                                <span className="text-muted-foreground/30">•</span>
+                                                <span className="flex items-center gap-1">
+                                                  <span className="font-semibold text-muted-foreground/60 uppercase text-[9px]">Project:</span>
+                                                  <span className="text-foreground/85 font-medium">{item.activeProjectName}</span>
+                                                </span>
+                                              </>
+                                            )}
+                                            {doc.sessionStartAt && (
+                                              <>
+                                                <span className="text-muted-foreground/30">•</span>
+                                                <span className="flex items-center gap-1">
+                                                  <span className="font-semibold text-muted-foreground/60 uppercase text-[9px]">Started:</span>
+                                                  <span className="text-foreground/85 font-medium">{formatDateTime(doc.sessionStartAt)}</span>
+                                                </span>
+                                              </>
+                                            )}
+                                            {typeof doc.syncsCount === "number" && (
+                                              <>
+                                                <span className="text-muted-foreground/30">•</span>
+                                                <span className="flex items-center gap-1">
+                                                  <span className="font-semibold text-muted-foreground/60 uppercase text-[9px]">Syncs:</span>
+                                                  <span className={cn(
+                                                    "inline-flex items-center justify-center px-1.5 py-0.2 rounded-full text-[9px] font-semibold tabular-nums",
+                                                    doc.syncsCount > 0
+                                                      ? "bg-violet-100 text-violet-800 dark:bg-violet-950/50 dark:text-violet-400"
+                                                      : "bg-muted text-muted-foreground border border-border/40"
+                                                  )}>
+                                                    {doc.syncsCount}
+                                                  </span>
+                                                </span>
+                                              </>
+                                            )}
+                                            {!isDocActive && (
+                                              <>
+                                                <span className="text-muted-foreground/30">•</span>
+                                                <span className="text-muted-foreground/60 italic">Background</span>
+                                              </>
+                                            )}
+                                          </div>
+                                        </div>
+                                      </div>
+
+                                      {/* Right block: Action Button */}
+                                      <div className="shrink-0 flex items-center justify-end pl-7 md:pl-0">
+                                        <Button
+                                          size="xs"
+                                          variant={isDocActive ? "default" : "outline"}
+                                          className="h-6 text-[10px] font-medium px-2 py-0"
+                                          onClick={(e) => {
+                                            e.stopPropagation();
+                                            void openSessionForDoc(item, doc);
+                                          }}
+                                          disabled={detailLoading}
+                                        >
+                                          {detailLoading ? (
+                                            <LoaderCircle className="size-2.5 animate-spin" />
+                                          ) : (
+                                            <>
+                                              <Eye className="size-2.5 mr-1" />
+                                              Inspect
+                                            </>
+                                          )}
+                                        </Button>
+                                      </div>
+                                    </div>
+                                  );
+                                })}
+                              </div>
+                            )}
+                          </div>
+                        </td>
+                      </tr>
+                    )}
+                  </Fragment>
+                );
+              })}
+            </tbody>
+          </table>
         </div>
       )}
 

@@ -1,39 +1,38 @@
 import mongoose, { Schema } from "mongoose";
 const PluginUseSchema = new Schema({
+    dateTime: { type: Date },
     autodeskUserName: {
-        type: String,
-        required: true,
-        trim: true,
-        index: true,
-    },
-    fullName: {
-        type: String,
-        required: true,
-        trim: true,
-    },
-    email: {
-        type: String,
-        required: true,
-        trim: true,
-        lowercase: true,
-        index: true,
-    },
-    plugin_name: {
         type: String,
         trim: true,
         default: "",
+        index: true,
     },
     pluginName: {
         type: String,
         trim: true,
         default: "",
     },
-    project_name: {
+    fileName: {
         type: String,
         trim: true,
         default: "",
     },
-    projectName: {
+    cloudProjectName: {
+        type: String,
+        trim: true,
+        default: "",
+    },
+    modelId: {
+        type: String,
+        trim: true,
+        default: "",
+    },
+    projectId: {
+        type: String,
+        trim: true,
+        default: "",
+    },
+    notes: {
         type: String,
         trim: true,
         default: "",

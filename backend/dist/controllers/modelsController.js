@@ -1,4 +1,4 @@
-import { getModelsSummary, getModelSizeHistory, getModelWarningsData, getModelWarningsTimeSeries, } from "../services/modelsService.js";
+import { getModelsSummary, getModelSizeHistory, getModelWarningsData, getModelWarningsTimeSeries, getModelSummaryHistory as getServiceModelSummaryHistory, } from "../services/modelsService.js";
 export const listModels = async (req, res) => {
     try {
         const from = typeof req.query.from === "string" ? req.query.from : undefined;
@@ -46,6 +46,21 @@ export const getModelWarningsHistory = async (req, res) => {
     }
     catch (err) {
         console.error("getModelWarningsHistory error:", err);
+        res.status(500).json({ error: "Internal server error" });
+    }
+};
+export const getModelSummaryHistory = async (req, res) => {
+    try {
+        const modelId = typeof req.params.modelId === "string" ? req.params.modelId : "";
+        const from = typeof req.query.from === "string" ? req.query.from : undefined;
+        const to = typeof req.query.to === "string" ? req.query.to : undefined;
+        console.log("getModelSummaryHistory called:", { modelId, from, to });
+        const points = await getServiceModelSummaryHistory(modelId, from, to);
+        console.log("getModelSummaryHistory result:", { modelId, pointsCount: points.length });
+        res.json({ modelId, points });
+    }
+    catch (err) {
+        console.error("getModelSummaryHistory error:", err);
         res.status(500).json({ error: "Internal server error" });
     }
 };

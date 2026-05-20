@@ -14,6 +14,11 @@ export const getSessionsController = async (req, res) => {
             ? String(crashRaw[0] ?? "")
             : String(crashRaw ?? "");
         const crashOnly = crashStr === "true" || crashStr === "1" || crashStr === "yes";
+        const liveRaw = req.query.liveOnly ?? req.query.live;
+        const liveStr = Array.isArray(liveRaw)
+            ? String(liveRaw[0] ?? "")
+            : String(liveRaw ?? "");
+        const liveOnly = liveStr === "true" || liveStr === "1" || liveStr === "yes";
         const filters = {
             limit: Number(req.query.limit) || undefined,
             page: Number(req.query.page) || undefined,
@@ -24,6 +29,7 @@ export const getSessionsController = async (req, res) => {
             deviceName: req.query.deviceName || undefined,
             cloudProjectName: req.query.cloudProjectName || undefined,
             crashOnly: crashOnly || undefined,
+            liveOnly: liveOnly || undefined,
         };
         const sessions = await getSessions(filters);
         res.json(sessions);

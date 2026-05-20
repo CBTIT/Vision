@@ -56,7 +56,7 @@ function formatFileSizeMb(value: number | null): string {
  * and falls back to black. Use explicit colors derived from theme.
  */
 function chartTickFill(isDark: boolean): string {
-  return isDark ? "#a3a3a3" : "#57534e";
+  return isDark ? "#a3a3a3" : "#475569";
 }
 
 /** Distinct strokes for multi-model combined chart (cycles if many models). */
@@ -312,8 +312,8 @@ function ModelSizeTrendChart({
   const xTicks = getAdaptiveTicks(chartData);
   const { isDark } = useTheme();
   const tickFill = chartTickFill(isDark);
-  const axisStroke = isDark ? "#4b5563" : "#6b7280";
-  const gridStroke = isDark ? "#374151" : "#d1d5db";
+  const axisStroke = isDark ? "#4b5563" : "#94a3b8";
+  const gridStroke = isDark ? "#374151" : "#e2e8f0";
   const pointRingStroke = isDark ? "#0f172a" : "#ffffff";
 
   return (
@@ -466,8 +466,8 @@ function AllModelsCombinedChartView({
 
   const { isDark } = useTheme();
   const tickFill = chartTickFill(isDark);
-  const axisStroke = isDark ? "#4b5563" : "#6b7280";
-  const gridStroke = isDark ? "#374151" : "#d1d5db";
+  const axisStroke = isDark ? "#4b5563" : "#94a3b8";
+  const gridStroke = isDark ? "#374151" : "#e2e8f0";
   const pointRingStroke = isDark ? "#0f172a" : "#ffffff";
 
   const hasAnyPoint = rows.length > 0;
@@ -815,10 +815,10 @@ export default function AllModels() {
   return (
     <div className="space-y-4">
       <Card className="shrink-0 border-border/90 bg-background/95 shadow-sm">
-        <CardHeader className="flex flex-row flex-wrap items-start justify-between gap-4 pb-3">
-          <div className="min-w-0 flex-1">
-            <CardTitle>All Models</CardTitle>
-            <p className="text-xs text-muted-foreground">
+        <CardHeader className="flex flex-row flex-wrap items-center justify-between gap-3 py-2.5 px-4">
+          <div className="min-w-0 flex items-baseline gap-2">
+            <CardTitle className="text-lg">All Models</CardTitle>
+            <p className="text-[11px] text-muted-foreground">
               {subtitle} • {items.length} model{items.length !== 1 ? "s" : ""}
             </p>
           </div>
@@ -830,8 +830,8 @@ export default function AllModels() {
             <Button
               type="button"
               variant={viewMode === "table" ? "default" : "ghost"}
-              size="sm"
-              className="h-8 rounded-sm px-3"
+              size="xs"
+              className="h-6.5 rounded-sm px-2.5 text-[11px]"
               onClick={() => setViewMode("table")}
             >
               Table
@@ -839,8 +839,8 @@ export default function AllModels() {
             <Button
               type="button"
               variant={viewMode === "chart" ? "default" : "ghost"}
-              size="sm"
-              className="h-8 rounded-sm px-3"
+              size="xs"
+              className="h-6.5 rounded-sm px-2.5 text-[11px]"
               onClick={() => {
                 setSelectedModelId(null);
                 setViewMode("chart");

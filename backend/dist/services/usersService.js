@@ -23,7 +23,7 @@ function compareVersionStrings(left, right) {
     return left.localeCompare(right, undefined, { numeric: true });
 }
 export const getUsersSummary = async () => {
-    const [sessionCounts, syncCounts, pluginCounts, pluginVersions, mappings, pluginNames,] = await Promise.all([
+    const [sessionCounts, syncCounts, pluginCounts, pluginVersions, mappings,] = await Promise.all([
         RevitSession.aggregate([
             { $match: { autodeskUserName: { $exists: true, $ne: "" } } },
             {
@@ -31,6 +31,7 @@ export const getUsersSummary = async () => {
                     _id: "$autodeskUserName",
                     sessionsCount: { $sum: 1 },
                     lastActiveAt: { $max: "$dateTime" },
+                    firstActiveAt: { $min: "$dateTime" },
                 },
             },
         ]),
@@ -94,12 +95,6 @@ export const getUsersSummary = async () => {
         UserMappings.find({ autodeskUserName: { $exists: true, $ne: "" } })
             .select({ autodeskUserName: 1, fullName: 1 })
             .lean(),
-        PluginUse.find({
-            autodeskUserName: { $exists: true, $ne: "" },
-            fullName: { $exists: true, $ne: "" },
-        })
-            .select({ autodeskUserName: 1, fullName: 1 })
-            .lean(),
     ]);
     const usernames = new Set([
         ...sessionCounts.map((row) => row._id),
@@ -110,6 +105,10 @@ export const getUsersSummary = async () => {
     const lastActiveMap = new Map(sessionCounts.map((row) => [
         row._id,
         row.lastActiveAt instanceof Date ? row.lastActiveAt.toISOString() : "",
+    ]));
+    const firstActiveMap = new Map(sessionCounts.map((row) => [
+        row._id,
+        row.firstActiveAt instanceof Date ? row.firstActiveAt.toISOString() : "",
     ]));
     const syncsCountMap = new Map(syncCounts.map((row) => [row._id, row.syncsCount]));
     const pluginUseCountMap = new Map(pluginCounts.map((row) => [row._id, row.pluginUseCount]));
@@ -129,11 +128,6 @@ export const getUsersSummary = async () => {
             .sort((left, right) => compareVersionStrings(left.pluginVersion, right.pluginVersion)),
     ]));
     const fullNameMap = new Map();
-    for (const row of pluginNames) {
-        if (!fullNameMap.has(row.autodeskUserName) && row.fullName) {
-            fullNameMap.set(row.autodeskUserName, row.fullName);
-        }
-    }
     for (const row of mappings) {
         if (row.fullName) {
             fullNameMap.set(row.autodeskUserName, row.fullName);
@@ -150,6 +144,7 @@ export const getUsersSummary = async () => {
             pluginVersions: pluginVersionDetails.map((detail) => detail.pluginVersion),
             pluginVersionDetails,
             lastActiveAt: lastActiveMap.get(autodeskUserName) ?? "",
+            firstActiveAt: firstActiveMap.get(autodeskUserName) ?? "",
         };
     });
     return items.sort((a, b) => {

@@ -239,10 +239,10 @@ function DailyTrendChart({
   }));
   const xTicks = getAdaptiveTicks(chartData);
   const { isDark } = useTheme();
-  const axisStroke = isDark ? "#6b7280" : "#9ca3af";
-  const gridStroke = isDark ? "#4b5563" : "#d1d5db";
+  const axisStroke = isDark ? "#6b7280" : "#94a3b8";
+  const gridStroke = isDark ? "#4b5563" : "#e2e8f0";
   /** Recharts SVG ticks do not resolve `hsl(var(--…))` reliably — use explicit colors */
-  const tickFill = isDark ? "#e5e7eb" : "#374151";
+  const tickFill = isDark ? "#e5e7eb" : "#475569";
   const sessionsGradientId = "sessions-gradient";
   const syncsGradientId = "syncs-gradient";
 

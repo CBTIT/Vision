@@ -26,7 +26,7 @@ const RevitSessionSchema = new Schema({
     fileSize: { type: Number, default: 0 },
     deviceFreeSpace: { type: Number, default: 0 },
     warningCount: { type: Number, default: 0 },
-    openWorksetCount: { type: String, default: "" },
+    openWorksetCount: { type: Number, default: 0 },
     openWorksetNames: [{ type: String }],
     missingReferences: [{ type: String }],
     syncDatabaseIds: [{ type: Schema.Types.ObjectId }],

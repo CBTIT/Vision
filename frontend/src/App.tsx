@@ -65,9 +65,12 @@ function App() {
           <Route path="cloud-data" element={<CloudData />} />
           <Route
             path="sessions"
-            element={<SessionsSyncsPage mode="sessions" />}
+            element={<SessionsSyncsPage key="sessions" mode="sessions" />}
           />
-          <Route path="syncs" element={<SessionsSyncsPage mode="syncs" />} />
+          <Route
+            path="syncs"
+            element={<SessionsSyncsPage key="syncs" mode="syncs" />}
+          />
           <Route path="warnings" element={<Warnings />} />
           <Route path="model-explorer" element={<ModelExplorer />} />
         </Route>
