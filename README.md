@@ -36,16 +36,16 @@ Source data (sessions, syncs, heartbeats, plugin use) is written to MongoDB by t
 
 ```
 ┌─────────────────────────────────────────────────────────┐
-│                  CBT Revit Plugin                        │
-│   (writes sessions, syncs, heartbeats to MongoDB)        │
+│                  CBT Revit Plugin                       │
+│   (writes sessions, syncs, heartbeats to MongoDB)       │
 └──────────────────────────┬──────────────────────────────┘
                            │  MongoDB Atlas / local
                            ▼
 ┌─────────────────────────────────────────────────────────┐
-│               Express 5 Backend (Node)                   │
-│  Routes → Controllers → Services → Mongoose Models       │
-│  Middleware: auth (JWT), CORS, cookie-parser             │
-│  Utilities: timeUtils                                    │
+│               Express 5 Backend (Node)                  │
+│  Routes → Controllers → Services → Mongoose Models      │
+│  Middleware: auth (JWT), CORS, cookie-parser            │
+│  Utilities: timeUtils                                   │
 └──────────────────────────┬──────────────────────────────┘
                            │  REST / JSON  (/api/*)
                            ▼
@@ -54,21 +54,21 @@ Source data (sessions, syncs, heartbeats, plugin use) is written to MongoDB by t
 │  React Router • Recharts • shadcn/ui • Tailwind         │
 │  ┌─────────────────────────────────────────────────┐    │
 │  │ App                                             │    │
-│  │  ├─ AuthContext (JWT session restore)          │    │
-│  │  ├─ DateRangeContext (shared date filter)      │    │
-│  │  ├─ HeaderContext (page title / subtitle)      │    │
-│  │  ├─ Layout (sidebar + main)                   │    │
-│  │  │   ├─ AppSidebar                           │    │
-│  │  │   └─ <Outlet> (page components)           │    │
-│  │  └─ Pages:                                    │    │
-│  │      ├─ Overview (charts, daily counts)       │    │
-│  │      ├─ ActiveUsers (live heartbeat view)     │    │
-│  │      ├─ AllUsers (per-user analytics)         │    │
-│  │      ├─ SessionsSyncsPage (session/sync list) │    │
-│  │      ├─ AllModels (model explorer)            │    │
-│  │      ├─ Plugins (plugin adoption)             │    │
-│  │      ├─ CloudData (APS project browser)       │    │
-│  │      └─ Login (auth form)                     │    │
+│  │  ├─ AuthContext (JWT session restore)           │    │
+│  │  ├─ DateRangeContext (shared date filter)       │    │
+│  │  ├─ HeaderContext (page title / subtitle)       │    │
+│  │  ├─ Layout (sidebar + main)                     │    │
+│  │  │   ├─ AppSidebar                              │    │
+│  │  │   └─ <Outlet> (page components)              │    │
+│  │  └─ Pages:                                      │    │
+│  │      ├─ Overview (charts, daily counts)         │    │
+│  │      ├─ ActiveUsers (live heartbeat view)       │    │
+│  │      ├─ AllUsers (per-user analytics)           │    │
+│  │      ├─ SessionsSyncsPage (session/sync list)   │    │
+│  │      ├─ AllModels (model explorer)              │    │
+│  │      ├─ Plugins (plugin adoption)               │    │
+│  │      ├─ CloudData (APS project browser)         │    │
+│  │      └─ Login (auth form)                       │    │
 │  └─────────────────────────────────────────────────┘    │
 └─────────────────────────────────────────────────────────┘
 ```
