@@ -4,8 +4,11 @@ import {
   getPluginNamesController,
   getPluginUseListController,
 } from "../controllers/pluginController.js";
+import { authMiddleware } from "../middleware/authMiddleware.js";
 
 const pluginRouter = express.Router();
+
+pluginRouter.use(authMiddleware);
 
 pluginRouter.get("/", getPluginUseListController);
 pluginRouter.get("/names", getPluginNamesController);

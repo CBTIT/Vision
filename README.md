@@ -10,7 +10,7 @@ An internal analytics dashboard for CBT Digital Practice that surfaces real-time
 2. [Architecture](#architecture)
 3. [Tech Stack](#tech-stack)
 4. [Backend API Endpoints](#backend-api-endpoints)
-5. [Frontend Pages & Routes](#frontend-pages--routes)
+5. [Frontend Architecture](#frontend-architecture)
 6. [Authentication](#authentication)
 7. [Data Models](#data-models)
 8. [Environment Variables](#environment-variables)
@@ -28,33 +28,54 @@ Vision is a full-stack TypeScript application composed of two independent packag
 | `backend/`  | Express 5 REST API that connects to MongoDB and serves all analytics data    |
 | `frontend/` | React 19 SPA built with Vite that consumes the API and renders the dashboard |
 
-Source data (sessions, syncs, heartbeats, plugin use) is written to MongoDB by the CBT Revit plugin itself. Vision reads that data and presents it in a structured, filterable UI.
+Source data (sessions, syncs, heartbeats, plugin use) is written to MongoDB by the CBT Revit plugin. Vision reads that data and presents it in a structured, filterable UI.
 
 ---
 
 ## Architecture
 
 ```
-┌─────────────────────────────────────────────────────┐
-│                  CBT Revit Plugin                   │
-│   (writes sessions, syncs, heartbeats to MongoDB)   │
-└────────────────────────┬────────────────────────────┘
-                         │  MongoDB Atlas / local
-                         ▼
-┌─────────────────────────────────────────────────────┐
-│               Express 5 Backend (Node)              │
-│  Routes → Controllers → Services → Mongoose Models  │
-│              JWT auth via HttpOnly cookies          │
-└────────────────────────┬────────────────────────────┘
-                         │  REST / JSON  (/api/*)
-                         ▼
-┌─────────────────────────────────────────────────────┐
-│            React 19 Frontend (Vite / SPA)           │
-│   React Router • Recharts • shadcn/ui • Tailwind    │
-└─────────────────────────────────────────────────────┘
+┌─────────────────────────────────────────────────────────┐
+│                  CBT Revit Plugin                        │
+│   (writes sessions, syncs, heartbeats to MongoDB)        │
+└──────────────────────────┬──────────────────────────────┘
+                           │  MongoDB Atlas / local
+                           ▼
+┌─────────────────────────────────────────────────────────┐
+│               Express 5 Backend (Node)                   │
+│  Routes → Controllers → Services → Mongoose Models       │
+│  Middleware: auth (JWT), CORS, cookie-parser             │
+│  Utilities: timeUtils                                    │
+└──────────────────────────┬──────────────────────────────┘
+                           │  REST / JSON  (/api/*)
+                           ▼
+┌─────────────────────────────────────────────────────────┐
+│            React 19 Frontend (Vite / SPA)               │
+│  React Router • Recharts • shadcn/ui • Tailwind         │
+│  ┌─────────────────────────────────────────────────┐    │
+│  │ App                                             │    │
+│  │  ├─ AuthContext (JWT session restore)          │    │
+│  │  ├─ DateRangeContext (shared date filter)      │    │
+│  │  ├─ HeaderContext (page title / subtitle)      │    │
+│  │  ├─ Layout (sidebar + main)                   │    │
+│  │  │   ├─ AppSidebar                           │    │
+│  │  │   └─ <Outlet> (page components)           │    │
+│  │  └─ Pages:                                    │    │
+│  │      ├─ Overview (charts, daily counts)       │    │
+│  │      ├─ ActiveUsers (live heartbeat view)     │    │
+│  │      ├─ AllUsers (per-user analytics)         │    │
+│  │      ├─ SessionsSyncsPage (session/sync list) │    │
+│  │      ├─ AllModels (model explorer)            │    │
+│  │      ├─ Plugins (plugin adoption)             │    │
+│  │      ├─ CloudData (APS project browser)       │    │
+│  │      └─ Login (auth form)                     │    │
+│  └─────────────────────────────────────────────────┘    │
+└─────────────────────────────────────────────────────────┘
 ```
 
 The backend and frontend are completely decoupled. CORS is configured on the backend to accept requests only from the configured frontend origin(s). All protected API routes require a valid JWT stored in an `HttpOnly` cookie.
+
+**Frontend data flow:** Pages call `lib/api.ts` functions → fetch from backend → state is managed locally via `useState` (no global store needed). The `AuthContext` handles session restoration on app load. Filters and date ranges are shared via `DateRangeContext` and passed as query params to the API.
 
 ---
 
@@ -95,94 +116,213 @@ The backend and frontend are completely decoupled. CORS is configured on the bac
 
 Base path: `/api`
 
-All routes marked **🔒** require a valid `authToken` cookie (JWT).
+All routes **except login and logout** require a valid `authToken` cookie (JWT).
 
-### Auth — `/api/auth`
+### Common query parameters
 
-| Method | Path                        | Auth | Description                                                                        |
-| ------ | --------------------------- | ---- | ---------------------------------------------------------------------------------- |
-| `POST` | `/api/auth/login`           | —    | Login with `email` + `password`. Sets `authToken` HttpOnly cookie (14-day expiry). |
-| `POST` | `/api/auth/logout`          | —    | Clears the `authToken` cookie.                                                     |
-| `GET`  | `/api/auth/me`              | 🔒   | Returns the authenticated user's profile.                                          |
-| `POST` | `/api/auth/change-password` | 🔒   | Changes password (requires `oldPassword` + `newPassword`).                         |
-| `PUT`  | `/api/auth/profile-icon`    | 🔒   | Updates the user's profile icon.                                                   |
-
-### Active Users — `/api/active`
-
-| Method | Path                | Description                                                  |
-| ------ | ------------------- | ------------------------------------------------------------ |
-| `GET`  | `/api/active/count` | Count of currently active Revit users (based on heartbeats). |
-| `GET`  | `/api/active/users` | List of currently active users and their open documents.     |
-
-### Sessions — `/api/sessions`
-
-Supports `from` / `to` query params (ISO dates) for date filtering.
-
-| Method | Path                  | Description                         |
-| ------ | --------------------- | ----------------------------------- |
-| `GET`  | `/api/sessions`       | Paginated list of Revit sessions.   |
-| `GET`  | `/api/sessions/count` | Total session count.                |
-| `GET`  | `/api/sessions/:id`   | Single session by MongoDB ObjectId. |
-
-### Syncs — `/api/syncs`
-
-Supports `from` / `to` query params for date filtering.
-
-| Method | Path               | Description                          |
-| ------ | ------------------ | ------------------------------------ |
-| `GET`  | `/api/syncs`       | Paginated list of Revit sync events. |
-| `GET`  | `/api/syncs/count` | Total sync event count.              |
-
-### Overview — `/api/overview`
-
-| Method | Path                         | Description                                      |
-| ------ | ---------------------------- | ------------------------------------------------ |
-| `GET`  | `/api/overview/daily-counts` | Daily session + sync counts for chart rendering. |
-| `GET`  | `/api/overview/date-bounds`  | Earliest and latest dates in the dataset.        |
-
-### Plugins — `/api/plugins`
-
-| Method | Path                 | Description                  |
-| ------ | -------------------- | ---------------------------- |
-| `GET`  | `/api/plugins`       | List of plugin use records.  |
-| `GET`  | `/api/plugins/count` | Count of plugin use records. |
-
-### Users — `/api/users`
-
-| Method | Path                 | Description                                 |
-| ------ | -------------------- | ------------------------------------------- |
-| `GET`  | `/api/users/summary` | Per-user summary (sessions, syncs, models). |
-
-### Models — `/api/models`
-
-| Method | Path          | Description                                    |
-| ------ | ------------- | ---------------------------------------------- |
-| `GET`  | `/api/models` | List of all Revit models seen across sessions. |
-
-### Cloud — `/api/cloud`
-
-| Method | Path                                            | Description                                 |
-| ------ | ----------------------------------------------- | ------------------------------------------- |
-| `GET`  | `/api/cloud/projects`                           | List of Autodesk cloud projects.            |
-| `GET`  | `/api/cloud/projects/:hubId/:projectId/details` | Detailed info for a specific cloud project. |
+| Param    | Type     | Applies to                  | Notes                                          |
+| -------- | -------- | --------------------------- | ---------------------------------------------- |
+| `page`   | number   | sessions, syncs, plugins    | 1-based page index                             |
+| `limit`  | number   | sessions, syncs, plugins    | Page size (max 1000)                           |
+| `from`   | ISO date | sessions, syncs, overview, models  | Start of date range filter              |
+| `to`     | ISO date | sessions, syncs, overview, models  | End of date range filter                |
 
 ---
 
-## Frontend Pages & Routes
+### Auth — `/api/auth`
 
-| Path            | Component           | Description                                            |
-| --------------- | ------------------- | ------------------------------------------------------ |
-| `/login`        | `Login`             | Login form. Unauthenticated users are redirected here. |
-| `/`             | `Overview`          | Summary charts — daily session/sync counts.            |
-| `/active-users` | `ActiveUsers`       | Live view of users currently in Revit.                 |
-| `/users`        | `AllUsers`          | Per-user analytics summary table.                      |
-| `/sessions`     | `SessionsSyncsPage` | Revit session history with date filtering.             |
-| `/syncs`        | `SessionsSyncsPage` | Revit sync event history with date filtering.          |
-| `/models`       | `AllModels`         | All Revit models seen across all sessions.             |
-| `/plugins`      | `Plugins`           | Plugin adoption / usage records.                       |
-| `/cloud-data`   | `CloudData`         | Autodesk cloud project browser.                        |
+| Method | Path                        | Auth | Body / Params                          | Description                                                              |
+| ------ | --------------------------- | ---- | -------------------------------------- | ------------------------------------------------------------------------ |
+| `POST` | `/api/auth/login`           | —    | `{ email, password }`                  | Login. Sets `authToken` HttpOnly cookie (14-day expiry).                 |
+| `POST` | `/api/auth/logout`          | —    | —                                      | Clears the `authToken` cookie.                                           |
+| `GET`  | `/api/auth/me`              | 🔒   | —                                      | Returns the authenticated user's profile. Use on app load to restore session. |
+| `POST` | `/api/auth/change-password` | 🔒   | `{ oldPassword, newPassword }`         | Changes password. Requires current password for verification.            |
+| `PUT`  | `/api/auth/profile-icon`    | 🔒   | —                                      | Updates the user's profile icon.                                         |
 
-All routes under `/` are protected. Unauthenticated requests are redirected to `/login`.
+---
+
+### Active Users (Heartbeats) — `/api/active`
+
+| Method | Path                          | Auth | Params                               | Description                                            |
+| ------ | ----------------------------- | ---- | ------------------------------------ | ------------------------------------------------------ |
+| `GET`  | `/api/active/count`           | 🔒   | —                                    | Count of currently active Revit users. Use for a live badge on the sidebar. |
+| `GET`  | `/api/active/users`           | 🔒   | —                                    | List of active users and their open documents. Use for the Active Users page. |
+| `GET`  | `/api/active/projects`        | 🔒   | —                                    | List of projects with recent heartbeat activity.        |
+| `GET`  | `/api/active/project-users`   | 🔒   | `projectName` (string, **required**) | Users active in a specific cloud project.               |
+
+---
+
+### Sessions — `/api/sessions`
+
+Sessions are the core Revit telemetry unit — one session per open/close cycle.
+
+**Query params:** `page`, `limit`, `from`, `to`, `autodeskUserName`, `modelId`, `deviceName`, `cloudProjectName`, `networkConnectionType` (`"wifi"` or `"ethernet"`), `crashOnly` / `crash` (boolean), `liveOnly` / `live` (boolean), `noSyncs` (boolean).
+
+| Method | Path                          | Auth | Usage suggestion                                                    |
+| ------ | ----------------------------- | ---- | ------------------------------------------------------------------- |
+| `GET`  | `/api/sessions`               | 🔒   | Paginated session list with rich filtering. Powers the Sessions table. |
+| `GET`  | `/api/sessions/count`         | 🔒   | Total session count for a date range. Useful for summary badges.     |
+| `GET`  | `/api/sessions/filter-options`| 🔒   | Distinct dropdown values (users, projects, models) for the filter bar. Accepts `from`, `to`, `cloudProjectName`, `modelId`. |
+| `GET`  | `/api/sessions/:id`           | 🔒   | Single session detail with full sync timeline.                      |
+
+**Usage examples:**
+```
+GET /api/sessions?from=2026-05-01&to=2026-05-22&crashOnly=true
+GET /api/sessions?autodeskUserName=jdoe&networkConnectionType=wifi
+GET /api/sessions?modelId=urn:adsk...&liveOnly=true
+GET /api/sessions/filter-options?from=2026-01-01&to=2026-06-01
+```
+
+---
+
+### Syncs — `/api/syncs`
+
+Sync events represent Revit-to-cloud synchronisation operations.
+
+**Query params:** `page`, `limit`, `from`, `to`, `autodeskUserName`.
+
+| Method | Path                  | Auth | Usage suggestion                                              |
+| ------ | --------------------- | ---- | ------------------------------------------------------------- |
+| `GET`  | `/api/syncs`          | 🔒   | Paginated sync event list. Powers the Syncs table.            |
+| `GET`  | `/api/syncs/count`    | 🔒   | Total sync count for a date range.                            |
+| `GET`  | `/api/syncs/:id`      | 🔒   | Single sync event detail.                                     |
+
+---
+
+### Overview — `/api/overview`
+
+Dashboard-level summary endpoints.
+
+| Method | Path                          | Auth | Params                                          | Usage suggestion                                         |
+| ------ | ----------------------------- | ---- | ----------------------------------------------- | -------------------------------------------------------- |
+| `GET`  | `/api/overview/daily-counts`  | 🔒   | `from` (YYYY-MM-DD), `to` (YYYY-MM-DD)          | Daily session + sync counts for Recharts line charts.    |
+| `GET`  | `/api/overview/date-bounds`   | 🔒   | —                                               | Earliest and latest dates in the dataset. Use to initialise date range pickers. |
+
+---
+
+### Models — `/api/models`
+
+| Method | Path                                             | Auth | Params                  | Usage suggestion                                            |
+| ------ | ------------------------------------------------ | ---- | ----------------------- | ----------------------------------------------------------- |
+| `GET`  | `/api/models`                                    | 🔒   | `from`, `to`           | All Revit models seen across sessions. Powers Models page.  |
+| `GET`  | `/api/models/model-warnings`                     | 🔒   | `from`, `to`           | Warning counts per model for the given period.              |
+| `GET`  | `/api/models/:modelId/size-history`              | 🔒   | `from`, `to`           | File size time-series for a specific model.                 |
+| `GET`  | `/api/models/:modelId/warning-history`           | 🔒   | `from`, `to`           | Warning count time-series for a specific model.             |
+| `GET`  | `/api/models/:modelId/summary-history`           | 🔒   | `from`, `to`           | Daily snapshot summary for a specific model.                |
+
+---
+
+### Plugins — `/api/plugins`
+
+| Method | Path                   | Auth | Params                    | Usage suggestion                                          |
+| ------ | ---------------------- | ---- | ------------------------- | --------------------------------------------------------- |
+| `GET`  | `/api/plugins`         | 🔒   | `page`, `limit`, `pluginName` | Paginated plugin use records.                         |
+| `GET`  | `/api/plugins/names`   | 🔒   | —                         | Distinct plugin names for a filter dropdown.              |
+| `GET`  | `/api/plugins/count`   | 🔒   | —                         | Total plugin use count for summary badges.                |
+
+---
+
+### Users — `/api/users`
+
+| Method | Path                    | Auth | Params | Usage suggestion                                         |
+| ------ | ----------------------- | ---- | ------ | -------------------------------------------------------- |
+| `GET`  | `/api/users/summary`    | 🔒   | —      | Per-user aggregate summary (session count, sync count, models). Powers the Users page. |
+
+---
+
+### Cloud Projects (Autodesk APS) — `/api/cloud`
+
+| Method | Path                                               | Auth | Params | Usage suggestion                                      |
+| ------ | -------------------------------------------------- | ---- | ------ | ----------------------------------------------------- |
+| `GET`  | `/api/cloud/projects`                              | 🔒   | —      | All Autodesk cloud projects grouped by hub. Powers Cloud Data page. |
+| `GET`  | `/api/cloud/projects/:hubId/:projectId/details`    | 🔒   | —      | Detailed metadata for a specific cloud project.       |
+
+---
+
+### Autodesk Integration — `/api/autodesk`
+
+| Method   | Path                       | Auth | Params        | Description                                             |
+| -------- | -------------------------- | ---- | ------------- | ------------------------------------------------------- |
+| `GET`    | `/api/autodesk/auth-url`   | 🔒   | —             | URL to redirect the user to for Autodesk OAuth.         |
+| `GET`    | `/api/autodesk/status`     | 🔒   | —             | Whether the user has a valid Autodesk token.            |
+| `POST`   | `/api/autodesk/graphql`    | 🔒   | Body: GraphQL | Proxy query to the AEC Data Model API.                  |
+| `DELETE` | `/api/autodesk/disconnect` | 🔒   | —             | Revoke stored Autodesk token.                           |
+
+| Method | Path                | Auth | Params                  | Description                        |
+| ------ | ------------------- | ---- | ----------------------- | ---------------------------------- |
+| `GET`  | `/auth/callback`    | —    | `code`, `state`         | Autodesk OAuth2 callback (not under `/api`). |
+
+---
+
+## Frontend Architecture
+
+```
+frontend/src/
+├── App.tsx                     Root component with React Router setup
+├── main.tsx                   Entry point (ReactDOM.createRoot)
+├── index.css                  Tailwind imports + global styles
+│
+├── components/
+│   ├── ui/                    shadcn/ui primitives (button, card, input, etc.)
+│   │   ├── avatar.tsx
+│   │   ├── button.tsx
+│   │   ├── calendar.tsx
+│   │   ├── card.tsx
+│   │   ├── dropdown-menu.tsx
+│   │   ├── input.tsx
+│   │   ├── popover.tsx
+│   │   ├── separator.tsx
+│   │   ├── sheet.tsx
+│   │   ├── sidebar.tsx
+│   │   ├── skeleton.tsx
+│   │   └── tooltip.tsx
+│   │
+│   ├── layout.tsx              Layout shell: sidebar + header + main content
+│   ├── app-sidebar.tsx         Left sidebar navigation
+│   ├── nav-user.tsx            User avatar / dropdown in sidebar
+│   ├── header-context.tsx      Page title / subtitle state
+│   │
+│   ├── login.tsx               Login page
+│   ├── change-password.tsx     Change password dialog
+│   ├── edit-profile-icon.tsx   Profile icon editor
+│   │
+│   ├── overview.tsx            Dashboard charts (daily counts)
+│   ├── activeUsers.tsx         Live active user list
+│   ├── activeProjects.tsx      Active project list
+│   ├── allUsers.tsx            Per-user summary table
+│   ├── alModels.tsx            Model explorer
+│   ├── modelExplorer.tsx       Single model drill-down
+│   ├── modelSummary.tsx        Model summary view
+│   ├── sessions-syncs.tsx      Sessions + Syncs table (shared component)
+│   ├── plugins.tsx             Plugin usage list
+│   ├── cloudData.tsx           Autodesk cloud project browser
+│   ├── warnings.tsx            Model warnings view
+│   │
+│   ├── date-range-context.tsx  Shared date range state (from / to)
+│   ├── date-range-filter.tsx   Date range picker UI
+│   └── refresh-button.tsx      Manual refresh button
+│
+├── contexts/
+│   └── AuthContext.tsx          JWT session restore + auth state
+│
+├── hooks/
+│   ├── use-auto-refresh.ts     Auto-refresh interval hook
+│   ├── use-mobile.ts           Responsive breakpoint detection
+│   └── use-theme.ts            Light/dark theme toggle
+│
+└── lib/
+    ├── api.ts                  All backend API calls (fetch wrappers)
+    ├── utils.ts                Utility functions (cn, date formatting, etc.)
+    └── profile-icons.tsx       Profile icon SVG components
+```
+
+### Key patterns
+
+- **No global state store** — each page manages its own state with `useState` / `useReducer`. The only shared state is `AuthContext` (session) and `DateRangeContext` (date filter range shared between header and pages).
+- **API layer** — `lib/api.ts` contains all `fetch` calls. Pages import these functions directly. Query parameters are built as objects and serialised by the API module.
+- **Shared table** — The Sessions and Syncs pages use the same `sessions-syncs.tsx` component. The URL path (`/sessions` or `/syncs`) determines the mode. Filtering (date, user, project, network type, crash/live, no-syncs) is done server-side via query params.
+- **Charts** — All charts use Recharts with consistent theming via Tailwind CSS variables.
+- **UI components** — The `components/ui/` folder contains shadcn/ui primitives that are tailored (not raw Radix). All other components use these primitives.
 
 ---
 

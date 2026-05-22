@@ -5,7 +5,10 @@ import {
   getSessionsController,
   getSessionsCountController,
 } from "../controllers/sessionsController.js";
+import { authMiddleware } from "../middleware/authMiddleware.js";
 const sessionRouter = express.Router();
+
+sessionRouter.use(authMiddleware);
 
 sessionRouter.get("/count", getSessionsCountController);
 sessionRouter.get("/filter-options", getSessionFilterOptionsController);

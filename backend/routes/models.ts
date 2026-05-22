@@ -6,8 +6,11 @@ import {
   listModels,
   getModelSummaryHistory,
 } from "../controllers/modelsController.js";
+import { authMiddleware } from "../middleware/authMiddleware.js";
 
 const router = Router();
+
+router.use(authMiddleware);
 
 router.get("/model-warnings", getModelWarningsOverview);
 /** @deprecated Same as /model-warnings; kept for older deployed clients. */

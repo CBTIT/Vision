@@ -5,7 +5,10 @@ import {
   getActiveUsersController,
   getActiveUsersCountController,
 } from "../controllers/activeController.js";
+import { authMiddleware } from "../middleware/authMiddleware.js";
 const userRouter = express.Router();
+
+userRouter.use(authMiddleware);
 
 userRouter.get("/", (req, res) => {
   res.json({ message: "Get All Users" });
