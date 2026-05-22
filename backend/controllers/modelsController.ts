@@ -79,9 +79,7 @@ export const getModelSummaryHistory = async (
     const from =
       typeof req.query.from === "string" ? req.query.from : undefined;
     const to = typeof req.query.to === "string" ? req.query.to : undefined;
-    console.log("getModelSummaryHistory called:", { modelId, from, to });
     const points = await getServiceModelSummaryHistory(modelId, from, to);
-    console.log("getModelSummaryHistory result:", { modelId, pointsCount: points.length });
     res.json({ modelId, points });
   } catch (err) {
     console.error("getModelSummaryHistory error:", err);

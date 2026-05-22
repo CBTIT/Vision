@@ -23,13 +23,10 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({
     // Check if user is already logged in
     const checkAuth = async () => {
       try {
-        console.log("🔍 Checking auth status...");
         const userData = await getMe();
-        console.log("✅ User authenticated:", userData);
         setUser(userData);
         setAuthError(null);
       } catch (error) {
-        console.log("❌ Not authenticated:", error);
         setUser(null);
         if (error instanceof Error && error.message.includes("timed out")) {
           setAuthError(
@@ -39,7 +36,6 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({
           setAuthError(null);
         }
       } finally {
-        console.log("✨ Auth check complete, hiding loader");
         setIsLoading(false);
       }
     };

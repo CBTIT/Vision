@@ -60,6 +60,23 @@ function chartTickFill(isDark: boolean): string {
   return isDark ? "#a3a3a3" : "#475569";
 }
 
+function formatCompactNumber(value: number): string {
+  if (value >= 1_000_000) {
+    const m = value / 1_000_000;
+    if (m < 10) return `${m.toFixed(2)}M`;
+    return `${Number.isInteger(m) ? m.toFixed(0) : m.toFixed(1)}M`;
+  }
+  if (value >= 1_000) {
+    const k = value / 1_000;
+    if (k < 10) return `${k.toFixed(2)}k`;
+    return `${Number.isInteger(k) ? k.toFixed(0) : k.toFixed(1)}k`;
+  }
+  if (value >= 100) {
+    return value.toLocaleString();
+  }
+  return value.toLocaleString();
+}
+
 function getAdaptiveTicks(data: ChartRow[]): string[] {
   if (data.length <= 1) return data.map((row) => row.date);
 
@@ -105,6 +122,7 @@ function ModelSummaryTooltip({
     openTime: boolean;
     syncTime: boolean;
     warnings: boolean;
+    elementCount: boolean;
   };
 }) {
   if (!active || !payload?.length) return null;
@@ -135,6 +153,11 @@ function ModelSummaryTooltip({
             Warnings: {row.maxWarningCount ?? 0}
           </p>
         )}
+        {visibleLines.elementCount && row.maxElementCount !== null && (
+          <p className="text-violet-500 dark:text-violet-400">
+            Elements: {row.maxElementCount.toLocaleString()}
+          </p>
+        )}
       </div>
     </div>
   );
@@ -157,6 +180,7 @@ export default function ModelSummary() {
     openTime: true,
     syncTime: true,
     warnings: true,
+    elementCount: true,
   });
 
   const fromStr = format(from, "yyyy-MM-dd");
@@ -293,7 +317,6 @@ export default function ModelSummary() {
     setHistoryLoading(true);
     fetchModelSummaryHistory({ modelId: selectedModelId, from: fromStr, to: toStr })
       .then((points) => {
-        console.log("Model summary history response:", { modelId: selectedModelId, from: fromStr, to: toStr, pointsCount: points.length });
         if (!cancelled) {
           setHistoryPoints(points);
         }
@@ -413,7 +436,8 @@ export default function ModelSummary() {
                         yAxisId="right"
                         orientation="right"
                         allowDecimals={false}
-                        domain={[0, "auto"]}
+                        domain={["auto", "auto"]}
+                        padding={{ top: 20, bottom: 20 }}
                         axisLine={{ stroke: axisStroke, strokeWidth: 1.4 }}
                         tickLine={{ stroke: axisStroke, strokeWidth: 1.2 }}
                         tick={{
@@ -433,7 +457,8 @@ export default function ModelSummary() {
                         yAxisId="right2"
                         orientation="right"
                         allowDecimals={false}
-                        domain={[0, "auto"]}
+                        domain={["auto", "auto"]}
+                        padding={{ top: 20, bottom: 20 }}
                         axisLine={{ stroke: axisStroke, strokeWidth: 1.4 }}
                         tickLine={{ stroke: axisStroke, strokeWidth: 1.2 }}
                         tick={{
@@ -442,7 +467,25 @@ export default function ModelSummary() {
                           fontWeight: 500,
                         }}
                         tickMargin={8}
-                        width={40}
+                        width={48}
+                        tickFormatter={(value: number) => formatCompactNumber(value)}
+                      />
+                      <YAxis
+                        yAxisId="right3"
+                        orientation="right"
+                        allowDecimals={false}
+                        domain={["auto", "auto"]}
+                        padding={{ top: 20, bottom: 20 }}
+                        axisLine={{ stroke: axisStroke, strokeWidth: 1.4 }}
+                        tickLine={{ stroke: axisStroke, strokeWidth: 1.2 }}
+                        tick={{
+                          fill: "#8b5cf6",
+                          fontSize: 12,
+                          fontWeight: 500,
+                        }}
+                        tickMargin={8}
+                        width={56}
+                        tickFormatter={(value: number) => formatCompactNumber(value)}
                       />
                       <Tooltip
                         content={<ModelSummaryTooltip visibleLines={visibleLines} />}
@@ -552,6 +595,31 @@ export default function ModelSummary() {
                           animationEasing="ease-out"
                         />
                       )}
+                      {visibleLines.elementCount && (
+                        <Line
+                          yAxisId="right3"
+                          type="monotone"
+                          dataKey="maxElementCount"
+                          name="Element Count"
+                          stroke="#8b5cf6"
+                          strokeWidth={1.5}
+                          dot={{
+                            r: 3,
+                            fill: "#8b5cf6",
+                            stroke: pointRingStroke,
+                            strokeWidth: 1.5,
+                          }}
+                          activeDot={{
+                            r: 5,
+                            fill: "#8b5cf6",
+                            stroke: pointRingStroke,
+                            strokeWidth: 1.5,
+                          }}
+                          isAnimationActive
+                          animationDuration={700}
+                          animationEasing="ease-out"
+                        />
+                      )}
                     </LineChart>
                   </ResponsiveContainer>
                 </div>
@@ -609,6 +677,19 @@ export default function ModelSummary() {
               >
                 <span className="inline-block h-3 w-6 rounded-full bg-yellow-500" />
                 <span>Warnings</span>
+              </button>
+              <button
+                type="button"
+                className={cn(
+                  "flex items-center gap-2 transition-opacity",
+                  !visibleLines.elementCount && "opacity-40",
+                )}
+                onClick={() =>
+                  setVisibleLines((prev) => ({ ...prev, elementCount: !prev.elementCount }))
+                }
+              >
+                <span className="inline-block h-3 w-6 rounded-full bg-violet-500" />
+                <span>Element Count</span>
               </button>
             </div>
           </CardContent>

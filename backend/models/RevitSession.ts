@@ -33,6 +33,7 @@ const RevitSessionSchema = new Schema(
     fileSize: { type: Number, default: 0 },
     deviceFreeSpace: { type: Number, default: 0 },
     warningCount: { type: Number, default: 0 },
+    elementCount: { type: Number, default: 0 },
 
     openWorksetCount: { type: Number, default: 0 },
     openWorksetNames: [{ type: String }],

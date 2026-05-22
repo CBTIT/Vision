@@ -27,6 +27,7 @@ export type ModelSummaryHistoryPoint = {
   maxOpeningDuration: number;
   maxSyncDuration: number;
   maxWarningCount: number;
+  maxElementCount: number | null;
 };
 
 function escapeRegex(value: string): string {
@@ -459,11 +460,8 @@ export const getModelSummaryHistory = async (
   const selectedIdentifier = modelId.trim();
   const normalizedModelId = normalizeModelId(modelId);
   if (!selectedIdentifier || !normalizedModelId) {
-    console.log("getModelSummaryHistory: empty modelId");
     return [];
   }
-
-  console.log("getModelSummaryHistory query:", { selectedIdentifier, normalizedModelId, from, to });
 
   const matchStage: Record<string, unknown> = {
     $or: [
@@ -500,6 +498,7 @@ export const getModelSummaryHistory = async (
     maxFileSize: number;
     openingDurations: number[];
     maxWarningCount: number;
+    maxElementCount: number;
   }>([
     { $match: matchStage },
     {
@@ -516,12 +515,11 @@ export const getModelSummaryHistory = async (
           $push: { $ifNull: ["$openingDuration", 0] },
         },
         maxWarningCount: { $max: { $ifNull: ["$warningCount", 0] } },
+        maxElementCount: { $max: { $ifNull: ["$elementCount", 0] } },
       },
     },
     { $sort: { _id: 1 } },
   ]);
-
-  console.log("getModelSummaryHistory sessionRows:", sessionRows.length);
 
   const syncMatchStage: Record<string, unknown> = {
     $or: [
@@ -575,8 +573,6 @@ export const getModelSummaryHistory = async (
     { $sort: { _id: 1 } },
   ]);
 
-  console.log("getModelSummaryHistory syncRows:", syncRows.length);
-
   function median(values: number[]): number {
     if (values.length === 0) return 0;
     const sorted = [...values].sort((a, b) => a - b);
@@ -592,12 +588,14 @@ export const getModelSummaryHistory = async (
   const openingDurationMap = new Map<string, number>();
   const syncDurationMap = new Map<string, number>();
   const warningCountMap = new Map<string, number>();
+  const elementCountMap = new Map<string, number>();
 
   for (const row of sessionRows) {
     dateSet.add(row._id);
     fileSizeMap.set(row._id, row.maxFileSize);
     openingDurationMap.set(row._id, median(row.openingDurations));
     warningCountMap.set(row._id, row.maxWarningCount);
+    elementCountMap.set(row._id, row.maxElementCount);
   }
 
   for (const row of syncRows) {
@@ -608,12 +606,16 @@ export const getModelSummaryHistory = async (
   const dates = [...dateSet].sort((a, b) => a.localeCompare(b));
 
   return dates
-    .map((date) => ({
-      date,
-      maxFileSize: fileSizeMap.get(date) ?? 0,
-      maxOpeningDuration: openingDurationMap.get(date) ?? 0,
-      maxSyncDuration: syncDurationMap.get(date) ?? 0,
-      maxWarningCount: warningCountMap.get(date) ?? 0,
-    }))
-    .filter((point) => point.maxFileSize > 0);
+    .map((date) => {
+      const ec = elementCountMap.get(date) ?? 0;
+      return {
+        date,
+        maxFileSize: fileSizeMap.get(date) ?? 0,
+        maxOpeningDuration: openingDurationMap.get(date) ?? 0,
+        maxSyncDuration: syncDurationMap.get(date) ?? 0,
+        maxWarningCount: warningCountMap.get(date) ?? 0,
+        maxElementCount: ec === 0 ? null : ec,
+      };
+    })
+    .filter((point) => point.maxFileSize > 0 || point.maxElementCount !== null);
 };

@@ -491,6 +491,7 @@ export type ModelSummaryHistoryPoint = {
   maxOpeningDuration: number;
   maxSyncDuration: number;
   maxWarningCount: number;
+  maxElementCount: number | null;
 };
 
 export async function fetchModelsList(params?: {
