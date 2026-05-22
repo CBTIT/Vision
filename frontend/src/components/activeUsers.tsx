@@ -267,7 +267,7 @@ function compareVersionStrings(left: string, right: string): number {
   return left.localeCompare(right, undefined, { numeric: true });
 }
 
-type ActiveUsersSortField = "user" | "machine" | "revit" | "activeProject" | "openDocsCount" | "updatedAt";
+type ActiveUsersSortField = "user" | "machine" | "revit" | "activeProject" | "openDocsCount" | "sessionStart";
 type SortOrder = "asc" | "desc";
 
 export default function ActiveUsers() {
@@ -431,10 +431,21 @@ export default function ActiveUsers() {
         const countB = b.openDocs?.length ?? 0;
         return sortOrder === "asc" ? countA - countB : countB - countA;
       }
-      if (sortField === "updatedAt") {
-        const timeA = a.dateTime ? new Date(a.dateTime).getTime() : 0;
-        const timeB = b.dateTime ? new Date(b.dateTime).getTime() : 0;
-        return sortOrder === "asc" ? timeA - timeB : timeB - timeA;
+
+      if (sortField === "sessionStart") {
+        const getEarliest = (item: ActiveUserItem) => {
+          let earliest = 0;
+          for (const doc of item.openDocs) {
+            if (doc.sessionStartAt) {
+              const t = new Date(doc.sessionStartAt).getTime();
+              if (earliest === 0 || t < earliest) earliest = t;
+            }
+          }
+          return earliest;
+        };
+        const startA = getEarliest(a);
+        const startB = getEarliest(b);
+        return sortOrder === "asc" ? startA - startB : startB - startA;
       }
       return 0;
     });
@@ -961,14 +972,13 @@ export default function ActiveUsers() {
                 {renderSortHeader("revit", "Revit")}
                 {renderSortHeader("activeProject", "Active Doc/Project")}
                 {renderSortHeader("openDocsCount", "Open Docs", "center")}
-                {renderSortHeader("updatedAt", "Last Update", "center")}
+                {renderSortHeader("sessionStart", "Session Start", "center")}
                 <th className="w-28 px-4 py-3 text-center font-semibold text-muted-foreground">Actions</th>
               </tr>
             </thead>
             <tbody>
               {sortedItems.map((item, index) => {
                 const displayName = item.fullName?.trim() || item.autodeskUserName;
-                const updatedAt = formatDateTime(item.dateTime);
                 const activeSessionId = getActiveSessionId(item);
                 const activeModelId =
                   typeof item.activeDocId === "string"
@@ -1045,8 +1055,19 @@ export default function ActiveUsers() {
                         </span>
                       </td>
                       <td className="px-4 py-3 text-center text-xs text-muted-foreground/80 tabular-nums whitespace-nowrap">
-                        {updatedAt}
+                        {(() => {
+                          let earliestStart: string | null = null;
+                          for (const doc of item.openDocs) {
+                            if (doc.sessionStartAt) {
+                              if (!earliestStart || new Date(doc.sessionStartAt) < new Date(earliestStart)) {
+                                earliestStart = doc.sessionStartAt;
+                              }
+                            }
+                          }
+                          return earliestStart ? formatDateTime(earliestStart) : "-";
+                        })()}
                       </td>
+
                       <td className="w-28 px-4 py-3 text-center">
                         <Button
                           size="xs"

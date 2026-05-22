@@ -1,6 +1,6 @@
 import { Fragment, useCallback, useEffect, useMemo, useState } from "react";
 import { format } from "date-fns";
-import { ChevronLeft, ChevronRight, Users } from "lucide-react";
+import { Cable, ChevronLeft, ChevronRight, Users, Wifi } from "lucide-react";
 import { useLocation, useNavigate } from "react-router-dom";
 
 import { cn } from "@/lib/utils";
@@ -45,7 +45,8 @@ function formatSessionUserOptionLabel(u: {
   count: number;
 }): string {
   const display = u.fullName?.trim() || u.autodeskUserName;
-  const n = typeof u.count === "number" && Number.isFinite(u.count) ? u.count : 0;
+  const n =
+    typeof u.count === "number" && Number.isFinite(u.count) ? u.count : 0;
   return `${display} (${n})`;
 }
 
@@ -108,6 +109,34 @@ function formatDateTime(value: string): string {
   return format(parsed, "hh:mm a, dd MMM yyyy");
 }
 
+function normalizeNetworkConnectionType(
+  value: unknown,
+): "wifi" | "ethernet" | "other" {
+  if (typeof value !== "string") return "other";
+  const trimmed = value.trim();
+  if (trimmed === "Wi-Fi") return "wifi";
+  if (trimmed === "Ethernet") return "ethernet";
+  return "other";
+}
+
+function NetworkTypeIcon({ type }: { type: "wifi" | "ethernet" }) {
+  const Icon = type === "wifi" ? Wifi : Cable;
+  return (
+    <span title={type === "wifi" ? "Wi-Fi Connection" : "Ethernet Connection"}>
+      <Icon className="size-3.5" />
+    </span>
+  );
+}
+
+function NetworkTypeLabel({ type }: { type: "wifi" | "ethernet" }) {
+  return (
+    <span className="inline-flex items-center gap-1.5 text-xs font-medium">
+      <NetworkTypeIcon type={type} />
+      {type === "wifi" ? "Wi-Fi" : "Ethernet"}
+    </span>
+  );
+}
+
 function formatTimeAndDateParts(
   key: string,
   value: unknown,
@@ -167,7 +196,24 @@ function formatSecondsToHms(value: unknown): string {
   const minutes = Math.floor((total % 3600) / 60);
   const remainingSeconds = total % 60;
 
-  return `${hours}h ${minutes}m ${remainingSeconds}s`;
+  if (hours > 0) return `${hours}h ${minutes}m ${remainingSeconds}s`;
+  if (minutes > 0) return `${minutes}m ${remainingSeconds}s`;
+  return `${remainingSeconds}s`;
+}
+
+function getSessionDurationLabel(session: SessionListItem): string {
+  if (isCrashSession(session)) return "-";
+  if (isActiveSession(session)) {
+    const raw = session.openingStartTime;
+    if (raw) {
+      const start = new Date(String(raw));
+      if (!Number.isNaN(start.getTime())) {
+        const elapsed = (Date.now() - start.getTime()) / 1000;
+        return formatSecondsToHms(elapsed);
+      }
+    }
+  }
+  return formatSecondsToHms(session.sessionDuration);
 }
 
 function formatSecondsSuffix(value: unknown): string {
@@ -302,7 +348,6 @@ function SyncTimeline({
   );
 }
 
-
 export default function SessionsSyncsPage({ mode }: { mode: Mode }) {
   const title = mode === "sessions" ? "Sessions" : "Syncs";
   const setHeaderRight = useHeaderRight();
@@ -331,7 +376,13 @@ export default function SessionsSyncsPage({ mode }: { mode: Mode }) {
   const [expandedSyncsBySessionId, setExpandedSyncsBySessionId] = useState<
     Record<string, boolean>
   >({});
-  const [sessionScope, setSessionScope] = useState<"all" | "crash" | "live">("all");
+  const [sessionScope, setSessionScope] = useState<"all" | "crash" | "live">(
+    "all",
+  );
+  const [networkFilter, setNetworkFilter] = useState<
+    "all" | "wifi" | "ethernet"
+  >("all");
+  const [noSyncsFilter, setNoSyncsFilter] = useState(false);
   const [filterProject, setFilterProject] = useState<"all" | string>("all");
   const [filterModel, setFilterModel] = useState<"all" | string>("all");
   const [filterUser, setFilterUser] = useState<"all" | string>("all");
@@ -368,6 +419,8 @@ export default function SessionsSyncsPage({ mode }: { mode: Mode }) {
     setFilterProject("all");
     setFilterModel("all");
     setFilterUser("all");
+    setNetworkFilter("all");
+    setNoSyncsFilter(false);
     if (mode !== "sessions") {
       setSessionScope("all");
     }
@@ -377,6 +430,8 @@ export default function SessionsSyncsPage({ mode }: { mode: Mode }) {
     setFilterProject("all");
     setFilterModel("all");
     setFilterUser("all");
+    setNetworkFilter("all");
+    setNoSyncsFilter(false);
   }, []);
 
   useEffect(() => {
@@ -388,8 +443,7 @@ export default function SessionsSyncsPage({ mode }: { mode: Mode }) {
     fetchSessionFilterOptions({
       from: fromStr,
       to: toStr,
-      cloudProjectName:
-        filterProject === "all" ? undefined : filterProject,
+      cloudProjectName: filterProject === "all" ? undefined : filterProject,
       modelId: filterModel === "all" ? undefined : filterModel,
     })
       .then((opts) => {
@@ -407,7 +461,7 @@ export default function SessionsSyncsPage({ mode }: { mode: Mode }) {
 
   useEffect(() => {
     setPage(1);
-  }, [sessionScope, filterProject, filterModel, filterUser]);
+  }, [    sessionScope, filterProject, filterModel, filterUser, networkFilter, noSyncsFilter]);
 
   useEffect(() => {
     setShowMoreDetails(false);
@@ -475,7 +529,7 @@ export default function SessionsSyncsPage({ mode }: { mode: Mode }) {
       openingDuration: formatSecondsSuffix(session.openingDuration),
       totalOpeningDuration: formatSecondsSuffix(session.totalOpeningDuration),
       closing: formatTimeAndDateParts("closingTime", session.closingTime),
-      sessionDuration: formatSecondsToHms(session.sessionDuration),
+      sessionDuration: isCrashSession(session) ? "-" : formatSecondsToHms(session.sessionDuration),
     };
   }, [mode, selectedItem]);
 
@@ -654,9 +708,15 @@ export default function SessionsSyncsPage({ mode }: { mode: Mode }) {
 
     const sync = selectedItem as SyncListItem;
     return {
-      syncStartTime: formatTimeAndDateParts("syncStartTime", sync.syncStartTime),
+      syncStartTime: formatTimeAndDateParts(
+        "syncStartTime",
+        sync.syncStartTime,
+      ),
       syncEndTime: formatTimeAndDateParts("syncEndTime", sync.syncEndTime),
-      syncReadyTime: formatTimeAndDateParts("syncReadyTime", sync.syncReadyTime),
+      syncReadyTime: formatTimeAndDateParts(
+        "syncReadyTime",
+        sync.syncReadyTime,
+      ),
       gap: formatSecondsSuffix(sync.gap),
       duration: formatSecondsSuffix(sync.duration),
       totalDuration: formatSecondsSuffix(sync.totalDuration),
@@ -720,6 +780,9 @@ export default function SessionsSyncsPage({ mode }: { mode: Mode }) {
               filterProject === "all" ? undefined : filterProject,
             modelId: filterModel === "all" ? undefined : filterModel,
             autodeskUserName: filterUser === "all" ? undefined : filterUser,
+            networkConnectionType:
+              networkFilter === "all" ? undefined : networkFilter,
+            noSyncs: noSyncsFilter || undefined,
           })
         : fetchSyncsList({ from: fromStr, to: toStr, page, limit });
 
@@ -744,6 +807,8 @@ export default function SessionsSyncsPage({ mode }: { mode: Mode }) {
     filterProject,
     filterModel,
     filterUser,
+    networkFilter,
+    noSyncsFilter,
   ]);
 
   useEffect(() => {
@@ -803,242 +868,361 @@ export default function SessionsSyncsPage({ mode }: { mode: Mode }) {
     <div className="flex h-full min-h-0 flex-col gap-4 overflow-hidden px-1 py-1">
       <Card className="shrink-0 border-border/90 bg-background/95 shadow-sm">
         <CardHeader className="pb-3">
-          <div className="flex flex-wrap items-center justify-between gap-3">
+          <div className="flex flex-wrap items-start justify-between gap-3">
             <div className="min-w-0 flex-1">
-              <CardTitle>{title}</CardTitle>
-              <div className="mt-0.5 flex flex-wrap items-center gap-x-3 gap-y-1.5">
-                <p className="text-xs text-muted-foreground">
-                  {subtitle} • {data.total} total • Page {data.page} of{" "}
-                  {data.totalPages}
-                </p>
-                {mode === "sessions" && (
-                  <>
-                  <div className="flex shrink-0 items-center gap-2">
-                    <span
-                      id="sessions-crash-filter-label"
-                      className="text-xs font-medium text-muted-foreground whitespace-nowrap"
-                    >
-                      Crash only
-                    </span>
-                    <button
-                      type="button"
-                      id="sessions-crash-filter"
-                      role="switch"
-                      aria-checked={sessionScope === "crash"}
-                      aria-labelledby="sessions-crash-filter-label"
-                      onClick={() =>
-                        setSessionScope((s) =>
-                          s === "crash" ? "all" : "crash",
-                        )
-                      }
-                      className={cn(
-                        "relative inline-flex h-6 w-11 shrink-0 cursor-pointer items-center rounded-full p-0.5 transition-colors",
-                        "focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 focus-visible:ring-offset-background focus-visible:outline-none",
-                        sessionScope === "crash"
-                          ? "bg-primary"
-                          : "bg-input dark:bg-input/80",
-                      )}
-                    >
-                      <span
-                        aria-hidden
-                        className={cn(
-                          "pointer-events-none block size-5 rounded-full bg-background shadow-sm ring-0 transition-transform duration-200 ease-in-out",
-                          sessionScope === "crash"
-                            ? "translate-x-5"
-                            : "translate-x-0",
-                        )}
-                      />
-                    </button>
-                  </div>
-                  <div className="flex shrink-0 items-center gap-2">
-                    <span
-                      id="sessions-live-filter-label"
-                      className="text-xs font-medium text-muted-foreground whitespace-nowrap"
-                    >
-                      Live only
-                    </span>
-                    <button
-                      type="button"
-                      id="sessions-live-filter"
-                      role="switch"
-                      aria-checked={sessionScope === "live"}
-                      aria-labelledby="sessions-live-filter-label"
-                      onClick={() =>
-                        setSessionScope((s) =>
-                          s === "live" ? "all" : "live",
-                        )
-                      }
-                      className={cn(
-                        "relative inline-flex h-6 w-11 shrink-0 cursor-pointer items-center rounded-full p-0.5 transition-colors",
-                        "focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 focus-visible:ring-offset-background focus-visible:outline-none",
-                        sessionScope === "live"
-                          ? "bg-emerald-500"
-                          : "bg-input dark:bg-input/80",
-                      )}
-                    >
-                      <span
-                        aria-hidden
-                        className={cn(
-                          "pointer-events-none block size-5 rounded-full bg-background shadow-sm ring-0 transition-transform duration-200 ease-in-out",
-                          sessionScope === "live"
-                            ? "translate-x-5"
-                            : "translate-x-0",
-                        )}
-                      />
-                    </button>
-                  </div>
-                  </>
-                )}
-              </div>
-              {mode === "sessions" && (
-                <div className="space-y-3 border-t border-border/60 pt-3">
-                  <div className="grid grid-cols-1 gap-3 sm:grid-cols-4">
-                    <div className="flex min-w-0 flex-col gap-1 sm:col-span-1">
-                      <label
-                        htmlFor="sessions-filter-project"
-                        className="text-xs font-medium text-muted-foreground"
-                      >
-                        Project
-                      </label>
-                      <select
-                        id="sessions-filter-project"
-                        value={filterProject}
-                        onChange={(e) => {
-                          setFilterProject(e.target.value);
-                          setFilterModel("all");
-                          setFilterUser("all");
-                        }}
-                        className={cn(
-                          "h-9 w-full rounded-md border border-input bg-background px-2.5 py-1 text-sm shadow-sm",
-                          "focus-visible:ring-2 focus-visible:ring-ring focus-visible:outline-none",
-                        )}
-                      >
-                        <option value="all">All projects</option>
-                        {filterOptions.projects.map((name) => (
-                          <option key={name} value={name}>
-                            {name}
-                          </option>
-                        ))}
-                      </select>
-                    </div>
-                    <div className="flex min-w-0 flex-col gap-1">
-                      <label
-                        htmlFor="sessions-filter-model"
-                        className="text-xs font-medium text-muted-foreground"
-                      >
-                        Model
-                      </label>
-                      <select
-                        id="sessions-filter-model"
-                        value={filterModel}
-                        onChange={(e) => {
-                          setFilterModel(e.target.value);
-                          setFilterUser("all");
-                        }}
-                        className={cn(
-                          "h-9 w-full rounded-md border border-input bg-background px-2.5 py-1 text-sm shadow-sm",
-                          "focus-visible:ring-2 focus-visible:ring-ring focus-visible:outline-none",
-                        )}
-                      >
-                        <option value="all">All models</option>
-                        {filterOptions.models.map((m) => (
-                          <option key={m.modelId} value={m.modelId}>
-                            {formatSessionModelOptionLabel(m)}
-                          </option>
-                        ))}
-                      </select>
-                    </div>
-                    <div className="flex min-w-0 flex-col gap-1">
-                      <label
-                        htmlFor="sessions-filter-user"
-                        className="text-xs font-medium text-muted-foreground"
-                      >
-                        User
-                      </label>
-                      <select
-                        id="sessions-filter-user"
-                        value={filterUser}
-                        onChange={(e) => setFilterUser(e.target.value)}
-                        className={cn(
-                          "h-9 w-full rounded-md border border-input bg-background px-2.5 py-1 text-sm shadow-sm",
-                          "focus-visible:ring-2 focus-visible:ring-ring focus-visible:outline-none",
-                        )}
-                      >
-                        <option value="all">All users</option>
-                        {filterOptions.users.map((u) => (
-                          <option
-                            key={u.autodeskUserName}
-                            value={u.autodeskUserName}
-                          >
-                            {formatSessionUserOptionLabel(u)}
-                          </option>
-                        ))}
-                      </select>
-                    </div>
-                    <div className="flex min-h-[3.25rem] min-w-0 items-end justify-start sm:justify-end">
+              <div className="flex flex-wrap items-center justify-between gap-3">
+                <CardTitle>{title}</CardTitle>
+                <div className="flex items-center gap-1.5">
+                  <Button
+                    variant="outline"
+                    size="sm"
+                    className="h-8 w-8 p-0"
+                    type="button"
+                    onClick={() => setPage((current) => Math.max(1, current - 1))}
+                    disabled={loading || data.page <= 1}
+                    aria-label="Previous page"
+                  >
+                    <ChevronLeft className="size-4" />
+                  </Button>
+                  {pageTokens.map((token, index) =>
+                    typeof token === "number" ? (
                       <Button
-                        type="button"
-                        variant="outline"
+                        key={token}
+                        variant={token === data.page ? "default" : "outline"}
                         size="sm"
-                        className="h-9 w-full shrink-0 sm:w-auto"
-                        onClick={clearSessionFilters}
+                        className="h-8 min-w-8 px-2"
+                        type="button"
+                        onClick={() => setPage(token)}
+                        disabled={loading}
                       >
-                        Clear filters
+                        {token}
                       </Button>
+                    ) : (
+                      <span
+                        key={`${token}-${index}`}
+                        className="px-1 text-sm text-muted-foreground"
+                      >
+                        ...
+                      </span>
+                    ),
+                  )}
+                  <Button
+                    variant="outline"
+                    size="sm"
+                    className="h-8 w-8 p-0"
+                    type="button"
+                    onClick={() => setPage((current) => Math.min(data.totalPages, current + 1))}
+                    disabled={loading || data.page >= data.totalPages}
+                    aria-label="Next page"
+                  >
+                    <ChevronRight className="size-4" />
+                  </Button>
+                </div>
+              </div>
+              <p className="mt-0.5 text-xs text-muted-foreground">
+                {subtitle} • {data.total} total • Page {data.page} of{" "}
+                {data.totalPages}
+              </p>
+              {mode === "sessions" && (
+                <div className="mt-3 rounded-lg border border-border/70 bg-muted/10 p-3 space-y-3">
+                  <div className="flex flex-wrap items-center gap-x-3 gap-y-1.5">
+                    {/* Crash Only */}
+                    <div className="flex items-center gap-1.5">
+                      <span
+                        id="sessions-crash-filter-label"
+                        className="text-[11px] font-medium text-muted-foreground whitespace-nowrap"
+                      >
+                        Crash only
+                      </span>
+                      <button
+                        type="button"
+                        id="sessions-crash-filter"
+                        role="switch"
+                        aria-checked={sessionScope === "crash"}
+                        aria-labelledby="sessions-crash-filter-label"
+                        onClick={() =>
+                          setSessionScope((s) =>
+                            s === "crash" ? "all" : "crash",
+                          )
+                        }
+                        className={cn(
+                          "relative inline-flex h-5 w-9 shrink-0 cursor-pointer items-center rounded-full p-[3px] transition-colors",
+                          "focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 focus-visible:ring-offset-background focus-visible:outline-none",
+                          sessionScope === "crash"
+                            ? "bg-primary"
+                            : "bg-input dark:bg-input/80",
+                        )}
+                      >
+                        <span
+                          aria-hidden
+                          className={cn(
+                            "pointer-events-none block size-3.5 rounded-full bg-background shadow-sm ring-0 transition-transform duration-200 ease-in-out",
+                            sessionScope === "crash"
+                              ? "translate-x-4"
+                              : "translate-x-0",
+                          )}
+                        />
+                      </button>
+                    </div>
+
+                    {/* Live Only */}
+                    <div className="flex items-center gap-1.5">
+                      <span
+                        id="sessions-live-filter-label"
+                        className="text-[11px] font-medium text-muted-foreground whitespace-nowrap"
+                      >
+                        Live only
+                      </span>
+                      <button
+                        type="button"
+                        id="sessions-live-filter"
+                        role="switch"
+                        aria-checked={sessionScope === "live"}
+                        aria-labelledby="sessions-live-filter-label"
+                        onClick={() =>
+                          setSessionScope((s) =>
+                            s === "live" ? "all" : "live",
+                          )
+                        }
+                        className={cn(
+                          "relative inline-flex h-5 w-9 shrink-0 cursor-pointer items-center rounded-full p-[3px] transition-colors",
+                          "focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 focus-visible:ring-offset-background focus-visible:outline-none",
+                          sessionScope === "live"
+                            ? "bg-emerald-500"
+                            : "bg-input dark:bg-input/80",
+                        )}
+                      >
+                        <span
+                          aria-hidden
+                          className={cn(
+                            "pointer-events-none block size-3.5 rounded-full bg-background shadow-sm ring-0 transition-transform duration-200 ease-in-out",
+                            sessionScope === "live"
+                              ? "translate-x-4"
+                              : "translate-x-0",
+                          )}
+                        />
+                      </button>
+                    </div>
+
+                    {/* Divider */}
+                    <div className="hidden sm:block h-4 w-px bg-border/60" />
+
+                    {/* WiFi Only */}
+                    <div className="flex items-center gap-1.5">
+                      <span
+                        id="sessions-wifi-filter-label"
+                        className="text-[11px] font-medium text-muted-foreground whitespace-nowrap flex items-center gap-1"
+                      >
+                        <Wifi className="size-3" />
+                        WiFi
+                      </span>
+                      <button
+                        type="button"
+                        id="sessions-wifi-filter"
+                        role="switch"
+                        aria-checked={networkFilter === "wifi"}
+                        aria-labelledby="sessions-wifi-filter-label"
+                        onClick={() =>
+                          setNetworkFilter((s) =>
+                            s === "wifi" ? "all" : "wifi",
+                          )
+                        }
+                        className={cn(
+                          "relative inline-flex h-5 w-9 shrink-0 cursor-pointer items-center rounded-full p-[3px] transition-colors",
+                          "focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 focus-visible:ring-offset-background focus-visible:outline-none",
+                          networkFilter === "wifi"
+                            ? "bg-sky-500"
+                            : "bg-input dark:bg-input/80",
+                        )}
+                      >
+                        <span
+                          aria-hidden
+                          className={cn(
+                            "pointer-events-none block size-3.5 rounded-full bg-background shadow-sm ring-0 transition-transform duration-200 ease-in-out",
+                            networkFilter === "wifi"
+                              ? "translate-x-4"
+                              : "translate-x-0",
+                          )}
+                        />
+                      </button>
+                    </div>
+
+                    {/* Ethernet Only */}
+                    <div className="flex items-center gap-1.5">
+                      <span
+                        id="sessions-ethernet-filter-label"
+                        className="text-[11px] font-medium text-muted-foreground whitespace-nowrap flex items-center gap-1"
+                      >
+                        <Cable className="size-3" />
+                        Ethernet
+                      </span>
+                      <button
+                        type="button"
+                        id="sessions-ethernet-filter"
+                        role="switch"
+                        aria-checked={networkFilter === "ethernet"}
+                        aria-labelledby="sessions-ethernet-filter-label"
+                        onClick={() =>
+                          setNetworkFilter((s) =>
+                            s === "ethernet" ? "all" : "ethernet",
+                          )
+                        }
+                        className={cn(
+                          "relative inline-flex h-5 w-9 shrink-0 cursor-pointer items-center rounded-full p-[3px] transition-colors",
+                          "focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 focus-visible:ring-offset-background focus-visible:outline-none",
+                          networkFilter === "ethernet"
+                            ? "bg-amber-500"
+                            : "bg-input dark:bg-input/80",
+                        )}
+                      >
+                        <span
+                          aria-hidden
+                          className={cn(
+                            "pointer-events-none block size-3.5 rounded-full bg-background shadow-sm ring-0 transition-transform duration-200 ease-in-out",
+                            networkFilter === "ethernet"
+                              ? "translate-x-4"
+                              : "translate-x-0",
+                          )}
+                        />
+                      </button>
+                    </div>
+
+                    {/* No Syncs */}
+                    <div className="flex items-center gap-1.5">
+                      <span
+                        id="sessions-nosyncs-filter-label"
+                        className="text-[11px] font-medium text-muted-foreground whitespace-nowrap"
+                      >
+                        No syncs
+                      </span>
+                      <button
+                        type="button"
+                        id="sessions-nosyncs-filter"
+                        role="switch"
+                        aria-checked={noSyncsFilter}
+                        aria-labelledby="sessions-nosyncs-filter-label"
+                        onClick={() => setNoSyncsFilter((s) => !s)}
+                        className={cn(
+                          "relative inline-flex h-5 w-9 shrink-0 cursor-pointer items-center rounded-full p-[3px] transition-colors",
+                          "focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 focus-visible:ring-offset-background focus-visible:outline-none",
+                          noSyncsFilter
+                            ? "bg-slate-500"
+                            : "bg-input dark:bg-input/80",
+                        )}
+                      >
+                        <span
+                          aria-hidden
+                          className={cn(
+                            "pointer-events-none block size-3.5 rounded-full bg-background shadow-sm ring-0 transition-transform duration-200 ease-in-out",
+                            noSyncsFilter
+                              ? "translate-x-4"
+                              : "translate-x-0",
+                          )}
+                        />
+                      </button>
+                    </div>
+
+                    <div className="hidden sm:block h-4 w-px bg-border/60" />
+
+                    <Button
+                      type="button"
+                      variant="outline"
+                      size="sm"
+                      className="h-7 text-[11px] shrink-0"
+                      onClick={clearSessionFilters}
+                    >
+                      Clear filters
+                    </Button>
+                  </div>
+
+                  <div className="border-t border-border/60 pt-3">
+                    <div className="grid grid-cols-1 gap-3 sm:grid-cols-3">
+                      <div className="flex min-w-0 flex-col gap-1">
+                        <label
+                          htmlFor="sessions-filter-project"
+                          className="text-xs font-medium text-muted-foreground"
+                        >
+                          Project
+                        </label>
+                        <select
+                          id="sessions-filter-project"
+                          value={filterProject}
+                          onChange={(e) => {
+                            setFilterProject(e.target.value);
+                            setFilterModel("all");
+                            setFilterUser("all");
+                          }}
+                          className={cn(
+                            "h-9 w-full rounded-md border border-input bg-background px-2.5 py-1 text-sm shadow-sm",
+                            "focus-visible:ring-2 focus-visible:ring-ring focus-visible:outline-none",
+                          )}
+                        >
+                          <option value="all">All projects</option>
+                          {filterOptions.projects.map((name) => (
+                            <option key={name} value={name}>
+                              {name}
+                            </option>
+                          ))}
+                        </select>
+                      </div>
+                      <div className="flex min-w-0 flex-col gap-1">
+                        <label
+                          htmlFor="sessions-filter-model"
+                          className="text-xs font-medium text-muted-foreground"
+                        >
+                          Model
+                        </label>
+                        <select
+                          id="sessions-filter-model"
+                          value={filterModel}
+                          onChange={(e) => {
+                            setFilterModel(e.target.value);
+                            setFilterUser("all");
+                          }}
+                          className={cn(
+                            "h-9 w-full rounded-md border border-input bg-background px-2.5 py-1 text-sm shadow-sm",
+                            "focus-visible:ring-2 focus-visible:ring-ring focus-visible:outline-none",
+                          )}
+                        >
+                          <option value="all">All models</option>
+                          {filterOptions.models.map((m) => (
+                            <option key={m.modelId} value={m.modelId}>
+                              {formatSessionModelOptionLabel(m)}
+                            </option>
+                          ))}
+                        </select>
+                      </div>
+                      <div className="flex min-w-0 flex-col gap-1">
+                        <label
+                          htmlFor="sessions-filter-user"
+                          className="text-xs font-medium text-muted-foreground"
+                        >
+                          User
+                        </label>
+                        <select
+                          id="sessions-filter-user"
+                          value={filterUser}
+                          onChange={(e) => setFilterUser(e.target.value)}
+                          className={cn(
+                            "h-9 w-full rounded-md border border-input bg-background px-2.5 py-1 text-sm shadow-sm",
+                            "focus-visible:ring-2 focus-visible:ring-ring focus-visible:outline-none",
+                          )}
+                        >
+                          <option value="all">All users</option>
+                          {filterOptions.users.map((u) => (
+                            <option
+                              key={u.autodeskUserName}
+                              value={u.autodeskUserName}
+                            >
+                              {formatSessionUserOptionLabel(u)}
+                            </option>
+                          ))}
+                        </select>
+                      </div>
                     </div>
                   </div>
                 </div>
               )}
-            </div>
-            <div className="flex items-center gap-1.5">
-              <Button
-                variant="outline"
-                size="sm"
-                className="h-8 w-8 p-0"
-                type="button"
-                onClick={() => setPage((current) => Math.max(1, current - 1))}
-                disabled={loading || data.page <= 1}
-                aria-label="Previous page"
-              >
-                <ChevronLeft className="size-4" />
-              </Button>
-
-              {pageTokens.map((token, index) =>
-                typeof token === "number" ? (
-                  <Button
-                    key={token}
-                    variant={token === data.page ? "default" : "outline"}
-                    size="sm"
-                    className="h-8 min-w-8 px-2"
-                    type="button"
-                    onClick={() => setPage(token)}
-                    disabled={loading}
-                  >
-                    {token}
-                  </Button>
-                ) : (
-                  <span
-                    key={`${token}-${index}`}
-                    className="px-1 text-sm text-muted-foreground"
-                  >
-                    ...
-                  </span>
-                ),
-              )}
-
-              <Button
-                variant="outline"
-                size="sm"
-                className="h-8 w-8 p-0"
-                type="button"
-                onClick={() =>
-                  setPage((current) => Math.min(data.totalPages, current + 1))
-                }
-                disabled={loading || data.page >= data.totalPages}
-                aria-label="Next page"
-              >
-                <ChevronRight className="size-4" />
-              </Button>
             </div>
           </div>
         </CardHeader>
@@ -1265,7 +1449,15 @@ export default function SessionsSyncsPage({ mode }: { mode: Mode }) {
                             {field.label}
                           </p>
                           <p className="mt-1 text-sm wrap-break-word">
-                            {field.value}
+                            {field.label === "Connection Type"
+                              ? (() => {
+                                  const nt = normalizeNetworkConnectionType(
+                                    (selectedItem as SessionListItem).networkConnectionType,
+                                  );
+                                  if (nt === "other") return field.value;
+                                  return <NetworkTypeLabel type={nt} />;
+                                })()
+                              : field.value}
                           </p>
                         </div>
                       ))}
@@ -1291,7 +1483,9 @@ export default function SessionsSyncsPage({ mode }: { mode: Mode }) {
                     Project Details
                   </p>
                   <div>
-                    <p className="text-xs text-muted-foreground">Project Name</p>
+                    <p className="text-xs text-muted-foreground">
+                      Project Name
+                    </p>
                     <p className="mt-1 text-sm font-medium wrap-break-word">
                       {syncPrimaryFields.projectName}
                     </p>
@@ -1370,8 +1564,12 @@ export default function SessionsSyncsPage({ mode }: { mode: Mode }) {
 
                 {syncRemainingFields.map((field) => (
                   <div key={field.label} className="rounded-lg border p-3">
-                    <p className="text-xs text-muted-foreground">{field.label}</p>
-                    <p className="mt-1 text-sm wrap-break-word">{field.value}</p>
+                    <p className="text-xs text-muted-foreground">
+                      {field.label}
+                    </p>
+                    <p className="mt-1 text-sm wrap-break-word">
+                      {field.value}
+                    </p>
                   </div>
                 ))}
               </>
@@ -1391,7 +1589,8 @@ export default function SessionsSyncsPage({ mode }: { mode: Mode }) {
                     <th className="px-4 py-3">Project</th>
                     <th className="px-4 py-3">Model</th>
                     <th className="px-4 py-3">User</th>
-                    <th className="px-4 py-3">Start Date</th>
+                    <th className="px-4 py-3">Start Time</th>
+                    <th className="w-28 px-4 py-3 text-center">Duration</th>
                     <th className="w-24 px-4 py-3 text-center">Syncs</th>
                     <th className="w-24 px-4 py-3 text-center">Status</th>
                     <th className="w-28 px-4 py-3 text-center">Actions</th>
@@ -1414,6 +1613,9 @@ export default function SessionsSyncsPage({ mode }: { mode: Mode }) {
                       </td>
                       <td className="px-4 py-3">
                         <Skeleton className="h-4 w-36" />
+                      </td>
+                      <td className="w-28 px-4 py-3 text-center">
+                        <Skeleton className="h-4 w-16 mx-auto" />
                       </td>
                       <td className="w-24 px-4 py-3 text-center">
                         <Skeleton className="h-4 w-8 mx-auto" />
@@ -1446,7 +1648,8 @@ export default function SessionsSyncsPage({ mode }: { mode: Mode }) {
                     <th className="px-4 py-3">Project</th>
                     <th className="px-4 py-3">Model</th>
                     <th className="px-4 py-3">User</th>
-                    <th className="px-4 py-3">Start Date</th>
+                    <th className="px-4 py-3">Start Time</th>
+                    <th className="w-28 px-4 py-3 text-center">Duration</th>
                     <th className="w-24 px-4 py-3 text-center">Syncs</th>
                     <th className="w-24 px-4 py-3 text-center">Status</th>
                     <th className="w-28 px-4 py-3 text-center">Actions</th>
@@ -1465,9 +1668,13 @@ export default function SessionsSyncsPage({ mode }: { mode: Mode }) {
                       if (syncCount < 2) return null;
                       const gaps = syncTimeline
                         .map((entry) => entry.gapMinutesFromPrevious)
-                        .filter((gap): gap is number => typeof gap === "number" && gap >= 0);
+                        .filter(
+                          (gap): gap is number =>
+                            typeof gap === "number" && gap >= 0,
+                        );
                       if (gaps.length === 0) return null;
-                      const average = gaps.reduce((sum, gap) => sum + gap, 0) / gaps.length;
+                      const average =
+                        gaps.reduce((sum, gap) => sum + gap, 0) / gaps.length;
                       return `${average.toFixed(1)} min`;
                     })();
 
@@ -1483,7 +1690,7 @@ export default function SessionsSyncsPage({ mode }: { mode: Mode }) {
                                 ? "bg-emerald-50/10 hover:bg-emerald-50/25 dark:bg-emerald-950/5 dark:hover:bg-emerald-950/15"
                                 : isExpanded
                                   ? "bg-muted/25"
-                                  : "hover:bg-muted/45"
+                                  : "hover:bg-muted/45",
                           )}
                           onClick={() => {
                             setExpandedSyncsBySessionId((current) => ({
@@ -1494,11 +1701,16 @@ export default function SessionsSyncsPage({ mode }: { mode: Mode }) {
                         >
                           {/* 1. Chevron/Index */}
                           <td className="w-16 px-4 py-3 text-center">
-                            <div className="flex items-center justify-center gap-2">
+                            <div className="flex items-center justify-center gap-1.5">
+                              {(() => {
+                                const nt = normalizeNetworkConnectionType(session.networkConnectionType);
+                                if (nt === "other") return null;
+                                return <NetworkTypeIcon type={nt} />;
+                              })()}
                               <span
                                 className={cn(
                                   "inline-flex transition-transform duration-200",
-                                  isExpanded ? "rotate-90" : ""
+                                  isExpanded ? "rotate-90" : "",
                                 )}
                               >
                                 <ChevronRight className="size-4 text-muted-foreground" />
@@ -1511,14 +1723,26 @@ export default function SessionsSyncsPage({ mode }: { mode: Mode }) {
 
                           {/* 2. Project */}
                           <td className="px-4 py-3 font-medium text-foreground">
-                            <span className="truncate max-w-[200px] block font-semibold text-foreground/90" title={session.cloudProjectName || session.projectId || ""}>
-                              {session.cloudProjectName || session.projectId || "—"}
+                            <span
+                              className="truncate max-w-[200px] block font-semibold text-foreground/90"
+                              title={
+                                session.cloudProjectName ||
+                                session.projectId ||
+                                ""
+                              }
+                            >
+                              {session.cloudProjectName ||
+                                session.projectId ||
+                                "—"}
                             </span>
                           </td>
 
                           {/* 3. Model */}
                           <td className="px-4 py-3 text-foreground font-medium">
-                            <span className="break-all whitespace-normal max-w-[240px] block" title={session.fileName || session.modelId || ""}>
+                            <span
+                              className="break-all whitespace-normal max-w-[240px] block"
+                              title={session.fileName || session.modelId || ""}
+                            >
                               {session.fileName || session.modelId || "—"}
                             </span>
                           </td>
@@ -1526,34 +1750,73 @@ export default function SessionsSyncsPage({ mode }: { mode: Mode }) {
                           {/* 4. User */}
                           <td className="px-4 py-3">
                             <div className="min-w-0">
-                              <p className="text-sm font-semibold truncate max-w-[160px]" title={session.fullName || session.autodeskUserName || ""}>
-                                {session.fullName || session.autodeskUserName || "—"}
+                              <p
+                                className="text-sm font-semibold truncate max-w-[160px]"
+                                title={
+                                  session.fullName ||
+                                  session.autodeskUserName ||
+                                  ""
+                                }
+                              >
+                                {session.fullName ||
+                                  session.autodeskUserName ||
+                                  "—"}
                               </p>
-                              {session.fullName && session.autodeskUserName && (
-                                <p className="text-[10px] text-muted-foreground truncate max-w-[160px]">
-                                  @{session.autodeskUserName}
-                                </p>
-                              )}
+                              {session.fullName &&
+                                session.autodeskUserName && (
+                                  <p className="text-[10px] text-muted-foreground truncate max-w-[160px]">
+                                    @{session.autodeskUserName}
+                                  </p>
+                                )}
                             </div>
                           </td>
 
                           {/* 5. Date */}
-                          <td className="px-4 py-3 text-xs text-muted-foreground whitespace-nowrap">
-                            {session.dateTime ? formatDateTime(session.dateTime) : "—"}
+                          <td className="px-4 py-3 whitespace-nowrap text-center">
+                            {(() => {
+                              if (!session.dateTime) return <span className="text-xs text-muted-foreground">—</span>;
+                              const d = new Date(session.dateTime);
+                              if (Number.isNaN(d.getTime())) return <span className="text-xs text-muted-foreground">{session.dateTime}</span>;
+                              return (
+                                <div className="flex flex-col items-center leading-tight">
+                                  <span className="text-sm font-semibold text-foreground/90 tabular-nums">{format(d, "hh:mm a")}</span>
+                                  <span className="text-[10px] text-muted-foreground">{format(d, "dd MMM yyyy")}</span>
+                                </div>
+                              );
+                            })()}
                           </td>
 
-                          {/* 6. Syncs Count */}
+                          {/* 6. Duration */}
+                          <td className="w-28 px-4 py-3 text-center">
+                            <span
+                              className={cn(
+                                "text-xs tabular-nums font-medium",
+                                active && "text-emerald-600 dark:text-emerald-400",
+                              )}
+                              title={
+                                active
+                                  ? "Elapsed time (session still live)"
+                                  : undefined
+                              }
+                            >
+                              {getSessionDurationLabel(session)}
+                            </span>
+                          </td>
+
+                          {/* 7. Syncs Count */}
                           <td className="w-24 px-4 py-3 text-center">
                             {syncCount > 0 ? (
                               <span className="inline-flex items-center gap-1 rounded-full border border-violet-200 bg-violet-50 dark:border-violet-850 dark:bg-violet-950/40 px-2.5 py-0.5 text-xs font-bold text-violet-700 dark:text-violet-400 tabular-nums">
                                 {syncCount}
                               </span>
                             ) : (
-                              <span className="text-xs text-muted-foreground/60">0</span>
+                              <span className="text-xs text-muted-foreground/60">
+                                0
+                              </span>
                             )}
                           </td>
 
-                          {/* 7. Status */}
+                          {/* 8. Status */}
                           <td className="w-24 px-4 py-3 text-center">
                             {crash ? (
                               <span className="inline-flex items-center rounded-full border border-rose-300 bg-rose-50 dark:border-rose-800 dark:bg-rose-950/50 px-2 py-0.5 text-[10px] font-semibold uppercase tracking-wide text-rose-700 dark:text-rose-400">
@@ -1570,8 +1833,11 @@ export default function SessionsSyncsPage({ mode }: { mode: Mode }) {
                             )}
                           </td>
 
-                          {/* 8. Actions */}
-                          <td className="w-28 px-4 py-3 text-center" onClick={(e) => e.stopPropagation()}>
+                          {/* 9. Actions */}
+                          <td
+                            className="w-28 px-4 py-3 text-center"
+                            onClick={(e) => e.stopPropagation()}
+                          >
                             <Button
                               size="xs"
                               variant="outline"
@@ -1588,10 +1854,12 @@ export default function SessionsSyncsPage({ mode }: { mode: Mode }) {
 
                         {/* Expandable sub-row drawer */}
                         {isExpanded && (
-                          <tr key={`${session._id}-expanded`} className="bg-muted/5 border-t-0 border-b">
-                            <td colSpan={8} className="px-4 py-3">
+                          <tr
+                            key={`${session._id}-expanded`}
+                            className="bg-muted/5 border-t-0 border-b"
+                          >
+                            <td colSpan={9} className="px-4 py-3">
                               <div className="rounded-xl border border-border/80 bg-card/45 p-5 pl-6 ml-12 space-y-4 shadow-md backdrop-blur-md animate-in slide-in-from-top-1 duration-150">
-                                
                                 {/* Header Details */}
                                 <div className="flex flex-wrap items-center justify-between gap-4 pb-2.5 border-b border-border/30">
                                   <div className="flex items-center gap-2">
@@ -1599,7 +1867,9 @@ export default function SessionsSyncsPage({ mode }: { mode: Mode }) {
                                       <Users className="size-3.5" />
                                     </span>
                                     <p className="text-xs font-bold uppercase tracking-wider text-muted-foreground">
-                                      Workstation Session Details for {session.fullName || session.autodeskUserName}
+                                      Workstation Session Details for{" "}
+                                      {session.fullName ||
+                                        session.autodeskUserName}
                                     </p>
                                   </div>
                                   <div className="flex items-center gap-2">
@@ -1623,20 +1893,44 @@ export default function SessionsSyncsPage({ mode }: { mode: Mode }) {
                                   <div className="space-y-4">
                                     <div className="grid grid-cols-2 gap-4">
                                       <div>
-                                        <p className="text-[10px] font-bold text-muted-foreground uppercase tracking-wide">Machine Name</p>
-                                        <p className="text-xs font-medium text-foreground mt-0.5 truncate">{session.deviceName ? String(session.deviceName) : "—"}</p>
+                                        <p className="text-[10px] font-bold text-muted-foreground uppercase tracking-wide">
+                                          Machine Name
+                                        </p>
+                                        <p className="text-xs font-medium text-foreground mt-0.5 truncate">
+                                          {session.deviceName
+                                            ? String(session.deviceName)
+                                            : "—"}
+                                        </p>
                                       </div>
                                       <div>
-                                        <p className="text-[10px] font-bold text-muted-foreground uppercase tracking-wide">Revit Version</p>
-                                        <p className="text-xs font-medium text-foreground mt-0.5">{session.revitVersion ? String(session.revitVersion) : "—"}</p>
+                                        <p className="text-[10px] font-bold text-muted-foreground uppercase tracking-wide">
+                                          Revit Version
+                                        </p>
+                                        <p className="text-xs font-medium text-foreground mt-0.5">
+                                          {session.revitVersion
+                                            ? String(session.revitVersion)
+                                            : "—"}
+                                        </p>
                                       </div>
                                       <div>
-                                        <p className="text-[10px] font-bold text-muted-foreground uppercase tracking-wide">Connection Type</p>
-                                        <p className="text-xs font-medium text-foreground mt-0.5">{session.networkConnectionType ? String(session.networkConnectionType) : "—"}</p>
+                                        <p className="text-[10px] font-bold text-muted-foreground uppercase tracking-wide">
+                                          Connection Type
+                                        </p>
+                                        <p className="text-xs font-medium text-foreground mt-0.5">
+                                          {(() => {
+                                            const nt = normalizeNetworkConnectionType(session.networkConnectionType);
+                                            if (nt === "other") return "—";
+                                            return <NetworkTypeLabel type={nt} />;
+                                          })()}
+                                        </p>
                                       </div>
                                       <div>
-                                        <p className="text-[10px] font-bold text-muted-foreground uppercase tracking-wide">File Size</p>
-                                        <p className="text-xs font-medium text-foreground mt-0.5">{formatFileSizeMb(session.fileSize)}</p>
+                                        <p className="text-[10px] font-bold text-muted-foreground uppercase tracking-wide">
+                                          File Size
+                                        </p>
+                                        <p className="text-xs font-medium text-foreground mt-0.5">
+                                          {formatFileSizeMb(session.fileSize)}
+                                        </p>
                                       </div>
                                     </div>
 
@@ -1644,35 +1938,85 @@ export default function SessionsSyncsPage({ mode }: { mode: Mode }) {
                                     <div className="rounded-lg border bg-muted/10 p-3 space-y-3">
                                       <div className="grid grid-cols-3 gap-2 text-xs">
                                         <div>
-                                          <p className="text-[10px] text-muted-foreground uppercase font-semibold">Start Time</p>
+                                          <p className="text-[10px] text-muted-foreground uppercase font-semibold">
+                                            Start Time
+                                          </p>
                                           <p className="font-semibold text-foreground/90 mt-0.5 whitespace-normal break-all leading-tight">
-                                            {session.openingStartTime ? format(new Date(String(session.openingStartTime)), "hh:mm a") : "—"}
+                                            {session.openingStartTime
+                                              ? format(
+                                                  new Date(
+                                                    String(
+                                                      session.openingStartTime,
+                                                    ),
+                                                  ),
+                                                  "hh:mm a",
+                                                )
+                                              : "—"}
                                           </p>
                                           {!!session.openingStartTime && (
                                             <p className="text-[9px] text-muted-foreground mt-0.5">
-                                              {format(new Date(String(session.openingStartTime)), "dd MMM yyyy")}
+                                              {format(
+                                                new Date(
+                                                  String(
+                                                    session.openingStartTime,
+                                                  ),
+                                                ),
+                                                "dd MMM yyyy",
+                                              )}
                                             </p>
                                           )}
                                         </div>
                                         <div>
-                                          <p className="text-[10px] text-muted-foreground uppercase font-semibold">Ready Time</p>
+                                          <p className="text-[10px] text-muted-foreground uppercase font-semibold">
+                                            Ready Time
+                                          </p>
                                           <p className="font-semibold text-foreground/90 mt-0.5 whitespace-normal break-all leading-tight">
-                                            {session.openingReadyTime ? format(new Date(String(session.openingReadyTime)), "hh:mm a") : "—"}
+                                            {session.openingReadyTime
+                                              ? format(
+                                                  new Date(
+                                                    String(
+                                                      session.openingReadyTime,
+                                                    ),
+                                                  ),
+                                                  "hh:mm a",
+                                                )
+                                              : "—"}
                                           </p>
                                           {!!session.openingReadyTime && (
                                             <p className="text-[9px] text-muted-foreground mt-0.5">
-                                              {format(new Date(String(session.openingReadyTime)), "dd MMM yyyy")}
+                                              {format(
+                                                new Date(
+                                                  String(
+                                                    session.openingReadyTime,
+                                                  ),
+                                                ),
+                                                "dd MMM yyyy",
+                                              )}
                                             </p>
                                           )}
                                         </div>
                                         <div>
-                                          <p className="text-[10px] text-muted-foreground uppercase font-semibold">Closing Time</p>
+                                          <p className="text-[10px] text-muted-foreground uppercase font-semibold">
+                                            Closing Time
+                                          </p>
                                           <p className="font-semibold text-foreground/90 mt-0.5 whitespace-normal break-all leading-tight">
-                                            {session.closingTime ? format(new Date(String(session.closingTime)), "hh:mm a") : "—"}
+                                            {session.closingTime
+                                              ? format(
+                                                  new Date(
+                                                    String(session.closingTime),
+                                                  ),
+                                                  "hh:mm a",
+                                                )
+                                              : "—"}
                                           </p>
                                           {!!session.closingTime && (
                                             <p className="text-[9px] text-muted-foreground mt-0.5">
-                                              {format(new Date(String(session.closingTime)), "dd MMM yyyy")}
+                                              {format(
+                                                new Date(
+                                                  String(session.closingTime),
+                                                ),
+                                                "dd MMM yyyy",
+                                              )}
                                             </p>
                                           )}
                                         </div>
@@ -1681,16 +2025,34 @@ export default function SessionsSyncsPage({ mode }: { mode: Mode }) {
                                       {/* Opening Durations */}
                                       <div className="grid grid-cols-3 gap-2 pt-2 border-t border-border/20 text-xs">
                                         <div>
-                                          <p className="text-[10px] text-muted-foreground">Opening Gap</p>
-                                          <p className="font-medium text-foreground mt-0.5">{formatSecondsSuffix(session.openingGap)}</p>
+                                          <p className="text-[10px] text-muted-foreground">
+                                            Opening Gap
+                                          </p>
+                                          <p className="font-medium text-foreground mt-0.5">
+                                            {formatSecondsSuffix(
+                                              session.openingGap,
+                                            )}
+                                          </p>
                                         </div>
                                         <div>
-                                          <p className="text-[10px] text-muted-foreground">Opening Duration</p>
-                                          <p className="font-medium text-foreground mt-0.5">{formatSecondsSuffix(session.openingDuration)}</p>
+                                          <p className="text-[10px] text-muted-foreground">
+                                            Opening Duration
+                                          </p>
+                                          <p className="font-medium text-foreground mt-0.5">
+                                            {formatSecondsSuffix(
+                                              session.openingDuration,
+                                            )}
+                                          </p>
                                         </div>
                                         <div>
-                                          <p className="text-[10px] text-muted-foreground">Session Duration</p>
-                                          <p className="font-bold text-foreground mt-0.5">{formatSecondsToHms(session.sessionDuration)}</p>
+                                          <p className="text-[10px] text-muted-foreground">
+                                            Session Duration
+                                          </p>
+                                          <p className="font-bold text-foreground mt-0.5">
+                                            {isCrashSession(session) ? "-" : formatSecondsToHms(
+                                              session.sessionDuration,
+                                            )}
+                                          </p>
                                         </div>
                                       </div>
                                     </div>
@@ -1704,7 +2066,10 @@ export default function SessionsSyncsPage({ mode }: { mode: Mode }) {
                                       </p>
                                       {averageSyncGapLabel && (
                                         <span className="text-[11px] font-medium text-muted-foreground">
-                                          Avg gap: <strong className="text-violet-600 dark:text-violet-400">{averageSyncGapLabel}</strong>
+                                          Avg gap:{" "}
+                                          <strong className="text-violet-600 dark:text-violet-400">
+                                            {averageSyncGapLabel}
+                                          </strong>
                                         </span>
                                       )}
                                     </div>
@@ -1721,7 +2086,6 @@ export default function SessionsSyncsPage({ mode }: { mode: Mode }) {
                                     </div>
                                   </div>
                                 </div>
-
                               </div>
                             </td>
                           </tr>
@@ -1733,124 +2097,135 @@ export default function SessionsSyncsPage({ mode }: { mode: Mode }) {
               </table>
             </div>
           )
-        ) : (
-          /* mode === "syncs" */
-          loading && data.items.length === 0 ? (
-            <div className="w-full overflow-x-auto rounded-xl border bg-card/65 backdrop-blur-md px-1 py-1">
-              <table className="w-full text-left text-sm border-collapse min-w-[800px]">
-                <thead className="bg-muted/40 text-xs font-semibold uppercase tracking-wider text-muted-foreground">
-                  <tr>
-                    <th className="w-16 px-4 py-3 text-center">#</th>
-                    <th className="px-4 py-3">Project</th>
-                    <th className="px-4 py-3">Model</th>
-                    <th className="px-4 py-3">User</th>
-                    <th className="px-4 py-3">Date</th>
-                    <th className="w-28 px-4 py-3 text-center">Actions</th>
+        ) : /* mode === "syncs" */
+        loading && data.items.length === 0 ? (
+          <div className="w-full overflow-x-auto rounded-xl border bg-card/65 backdrop-blur-md px-1 py-1">
+            <table className="w-full text-left text-sm border-collapse min-w-[800px]">
+              <thead className="bg-muted/40 text-xs font-semibold uppercase tracking-wider text-muted-foreground">
+                <tr>
+                  <th className="w-16 px-4 py-3 text-center">#</th>
+                  <th className="px-4 py-3">Project</th>
+                  <th className="px-4 py-3">Model</th>
+                  <th className="px-4 py-3">User</th>
+                  <th className="px-4 py-3">Date</th>
+                  <th className="w-28 px-4 py-3 text-center">Actions</th>
+                </tr>
+              </thead>
+              <tbody>
+                {Array.from({ length: 5 }).map((_, index) => (
+                  <tr key={index} className="border-t">
+                    <td className="w-16 px-4 py-3 text-center">
+                      <Skeleton className="h-4 w-4 mx-auto" />
+                    </td>
+                    <td className="px-4 py-3">
+                      <Skeleton className="h-4 w-40" />
+                    </td>
+                    <td className="px-4 py-3">
+                      <Skeleton className="h-4 w-48" />
+                    </td>
+                    <td className="px-4 py-3">
+                      <Skeleton className="h-4 w-32" />
+                    </td>
+                    <td className="px-4 py-3">
+                      <Skeleton className="h-4 w-36" />
+                    </td>
+                    <td className="w-28 px-4 py-3 text-center">
+                      <Skeleton className="h-8 w-20 mx-auto rounded-md" />
+                    </td>
                   </tr>
-                </thead>
-                <tbody>
-                  {Array.from({ length: 5 }).map((_, index) => (
-                    <tr key={index} className="border-t">
+                ))}
+              </tbody>
+            </table>
+          </div>
+        ) : data.items.length === 0 ? (
+          <Card>
+            <CardContent className="py-8 text-center text-sm text-muted-foreground">
+              No syncs found for this filter & date range.
+            </CardContent>
+          </Card>
+        ) : (
+          <div className="w-full overflow-x-auto rounded-xl border bg-card/65 backdrop-blur-md px-1 py-1 animate-in fade-in duration-200">
+            <table className="w-full text-left text-sm border-collapse min-w-[800px]">
+              <thead className="bg-muted/40 text-xs font-semibold uppercase tracking-wider text-muted-foreground">
+                <tr>
+                  <th className="w-16 px-4 py-3 text-center">#</th>
+                  <th className="px-4 py-3">Project</th>
+                  <th className="px-4 py-3">Model</th>
+                  <th className="px-4 py-3">User</th>
+                  <th className="px-4 py-3">Date</th>
+                  <th className="w-28 px-4 py-3 text-center">Actions</th>
+                </tr>
+              </thead>
+              <tbody>
+                {data.items.map((item, index) => {
+                  const sync = item as SyncListItem;
+                  return (
+                    <tr
+                      key={sync._id}
+                      className="border-t transition-colors hover:bg-muted/45"
+                    >
                       <td className="w-16 px-4 py-3 text-center">
-                        <Skeleton className="h-4 w-4 mx-auto" />
+                        <span className="text-xs font-semibold text-muted-foreground/60 tabular-nums">
+                          {(data.page - 1) * data.limit + index + 1}
+                        </span>
+                      </td>
+                      <td className="px-4 py-3 font-medium text-foreground">
+                        <span
+                          className="truncate max-w-[200px] block font-semibold text-foreground/90"
+                          title={sync.cloudProjectName || sync.projectId || ""}
+                        >
+                          {sync.cloudProjectName || sync.projectId || "—"}
+                        </span>
+                      </td>
+                      <td className="px-4 py-3 font-medium text-foreground">
+                        <span
+                          className="break-all whitespace-normal max-w-[240px] block"
+                          title={sync.fileName || sync.modelId || ""}
+                        >
+                          {sync.fileName || sync.modelId || "—"}
+                        </span>
                       </td>
                       <td className="px-4 py-3">
-                        <Skeleton className="h-4 w-40" />
+                        <div className="min-w-0">
+                          <p
+                            className="text-sm font-semibold truncate max-w-[160px]"
+                            title={sync.fullName || sync.autodeskUserName || ""}
+                          >
+                            {sync.fullName || sync.autodeskUserName || "—"}
+                          </p>
+                          {sync.fullName && sync.autodeskUserName && (
+                            <p className="text-[10px] text-muted-foreground truncate max-w-[160px]">
+                              @{sync.autodeskUserName}
+                            </p>
+                          )}
+                        </div>
                       </td>
-                      <td className="px-4 py-3">
-                        <Skeleton className="h-4 w-48" />
-                      </td>
-                      <td className="px-4 py-3">
-                        <Skeleton className="h-4 w-32" />
-                      </td>
-                      <td className="px-4 py-3">
-                        <Skeleton className="h-4 w-36" />
+                      <td className="px-4 py-3 text-xs text-muted-foreground whitespace-nowrap">
+                        {sync.dateTime || sync.date
+                          ? formatDateTime(
+                              (sync.dateTime ?? sync.date) as string,
+                            )
+                          : "—"}
                       </td>
                       <td className="w-28 px-4 py-3 text-center">
-                        <Skeleton className="h-8 w-20 mx-auto rounded-md" />
+                        <Button
+                          size="xs"
+                          variant="outline"
+                          className="h-7 text-[11px] font-medium animate-in fade-in duration-150 hover:bg-violet-50 hover:text-violet-700 dark:hover:bg-violet-950/40 dark:hover:text-violet-400"
+                          onClick={() => {
+                            setSelectedItem(sync);
+                            setDetailsOpen(true);
+                          }}
+                        >
+                          Inspect
+                        </Button>
                       </td>
                     </tr>
-                  ))}
-                </tbody>
-              </table>
-            </div>
-          ) : data.items.length === 0 ? (
-            <Card>
-              <CardContent className="py-8 text-center text-sm text-muted-foreground">
-                No syncs found for this filter & date range.
-              </CardContent>
-            </Card>
-          ) : (
-            <div className="w-full overflow-x-auto rounded-xl border bg-card/65 backdrop-blur-md px-1 py-1 animate-in fade-in duration-200">
-              <table className="w-full text-left text-sm border-collapse min-w-[800px]">
-                <thead className="bg-muted/40 text-xs font-semibold uppercase tracking-wider text-muted-foreground">
-                  <tr>
-                    <th className="w-16 px-4 py-3 text-center">#</th>
-                    <th className="px-4 py-3">Project</th>
-                    <th className="px-4 py-3">Model</th>
-                    <th className="px-4 py-3">User</th>
-                    <th className="px-4 py-3">Date</th>
-                    <th className="w-28 px-4 py-3 text-center">Actions</th>
-                  </tr>
-                </thead>
-                <tbody>
-                  {data.items.map((item, index) => {
-                    const sync = item as SyncListItem;
-                    return (
-                      <tr
-                        key={sync._id}
-                        className="border-t transition-colors hover:bg-muted/45"
-                      >
-                        <td className="w-16 px-4 py-3 text-center">
-                          <span className="text-xs font-semibold text-muted-foreground/60 tabular-nums">
-                            {(data.page - 1) * data.limit + index + 1}
-                          </span>
-                        </td>
-                        <td className="px-4 py-3 font-medium text-foreground">
-                          <span className="truncate max-w-[200px] block font-semibold text-foreground/90" title={sync.cloudProjectName || sync.projectId || ""}>
-                            {sync.cloudProjectName || sync.projectId || "—"}
-                          </span>
-                        </td>
-                        <td className="px-4 py-3 font-medium text-foreground">
-                          <span className="break-all whitespace-normal max-w-[240px] block" title={sync.fileName || sync.modelId || ""}>
-                            {sync.fileName || sync.modelId || "—"}
-                          </span>
-                        </td>
-                        <td className="px-4 py-3">
-                          <div className="min-w-0">
-                            <p className="text-sm font-semibold truncate max-w-[160px]" title={sync.fullName || sync.autodeskUserName || ""}>
-                              {sync.fullName || sync.autodeskUserName || "—"}
-                            </p>
-                            {sync.fullName && sync.autodeskUserName && (
-                              <p className="text-[10px] text-muted-foreground truncate max-w-[160px]">
-                                @{sync.autodeskUserName}
-                              </p>
-                            )}
-                          </div>
-                        </td>
-                        <td className="px-4 py-3 text-xs text-muted-foreground whitespace-nowrap">
-                          {sync.dateTime || sync.date ? formatDateTime((sync.dateTime ?? sync.date) as string) : "—"}
-                        </td>
-                        <td className="w-28 px-4 py-3 text-center">
-                          <Button
-                            size="xs"
-                            variant="outline"
-                            className="h-7 text-[11px] font-medium animate-in fade-in duration-150 hover:bg-violet-50 hover:text-violet-700 dark:hover:bg-violet-950/40 dark:hover:text-violet-400"
-                            onClick={() => {
-                              setSelectedItem(sync);
-                              setDetailsOpen(true);
-                            }}
-                          >
-                            Inspect
-                          </Button>
-                        </td>
-                      </tr>
-                    );
-                  })}
-                </tbody>
-              </table>
-            </div>
-          )
+                  );
+                })}
+              </tbody>
+            </table>
+          </div>
         )}
       </div>
     </div>

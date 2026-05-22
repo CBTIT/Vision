@@ -23,6 +23,10 @@ type SessionFilters = {
   crashOnly?: boolean;
   /** When true, only sessions that are still open (closingTime empty/null/missing) */
   liveOnly?: boolean;
+  /** Connection type filter: "wifi" matches "Wi-Fi", "ethernet" matches "Ethernet" */
+  networkConnectionType?: string;
+  /** When true, only sessions with 0 syncs */
+  noSyncs?: boolean;
 };
 
 function buildDateRangeMatch(filters: { from?: string; to?: string }): {
@@ -94,6 +98,19 @@ function usernameAlternatives(value: string): string[] {
     .filter(Boolean);
 }
 
+function buildNetworkConnectionTypeClause(
+  match: Record<string, unknown>,
+  networkConnectionType: string | undefined,
+): void {
+  if (!networkConnectionType) return;
+  const raw = networkConnectionType.trim().toLowerCase();
+  if (raw === "wifi") {
+    match.networkConnectionType = "Wi-Fi";
+  } else if (raw === "ethernet") {
+    match.networkConnectionType = "Ethernet";
+  }
+}
+
 const buildSessionFilters = (filters: SessionFilters) => {
   const query: any = {};
   if (filters.autodeskUserName) {
@@ -107,16 +124,7 @@ const buildSessionFilters = (filters: SessionFilters) => {
       }));
     }
   }
-  if (filters.modelId) {
-    const normalizedModelId = normalizeModelId(filters.modelId);
-    if (normalizedModelId) {
-      const escaped = escapeRegex(normalizedModelId);
-      query.modelId = {
-        $regex: `^\\{?${escaped}\\}?$`,
-        $options: "i",
-      };
-    }
-  }
+  addModelIdClause(query, filters.modelId);
   if (filters.deviceName) {
     query.deviceName = {
       $regex: `^${escapeRegex(filters.deviceName.trim())}$`,
@@ -125,21 +133,28 @@ const buildSessionFilters = (filters: SessionFilters) => {
   }
   Object.assign(query, buildDateRangeMatch(filters));
 
-  if (filters.cloudProjectName) {
-    const t = filters.cloudProjectName.trim();
-    if (t) {
-      query.cloudProjectName = {
-        $regex: `^${escapeRegex(t)}$`,
-        $options: "i",
-      };
-    }
-  }
+  addCloudProjectNameClause(query, filters.cloudProjectName);
   if (filters.crashOnly) {
     query.crashStatus = true;
   }
   if (filters.liveOnly) {
     query.closingTime = { $in: [null, ""] };
     query.crashStatus = { $ne: true };
+  }
+  if (filters.networkConnectionType) {
+    buildNetworkConnectionTypeClause(query, filters.networkConnectionType);
+  }
+  if (filters.noSyncs) {
+    const noSyncConditions = [
+      { syncDatabaseIds: { $exists: false } },
+      { syncDatabaseIds: { $size: 0 } },
+    ];
+    if (query.$or) {
+      query.$and = [{ $or: query.$or }, { $or: noSyncConditions }];
+      delete query.$or;
+    } else {
+      query.$or = noSyncConditions;
+    }
   }
   return query;
 };
@@ -215,40 +230,36 @@ export const getSessionFilterOptions = async (filters: {
   const projects = Array.from(
     new Set(
       rawProjects
-        .filter((p): p is string => typeof p === "string" && p.trim().length > 0)
+        .filter(
+          (p): p is string => typeof p === "string" && p.trim().length > 0,
+        )
         .map((p) => p.trim()),
     ),
   ).sort((a, b) => a.localeCompare(b, undefined, { sensitivity: "base" }));
 
   const models: Array<{ modelId: string; label: string; count: number }> =
     modelAgg
-      .map(
-        (row: {
-          _id?: unknown;
-          fileName?: unknown;
-          count?: unknown;
-        }) => {
-          const id =
-            typeof row._id === "string"
-              ? row._id.trim()
-              : row._id != null
-                ? String(row._id).trim()
-                : "";
-          const file =
-            typeof row.fileName === "string" && row.fileName.trim()
-              ? row.fileName.trim()
+      .map((row: { _id?: unknown; fileName?: unknown; count?: unknown }) => {
+        const id =
+          typeof row._id === "string"
+            ? row._id.trim()
+            : row._id != null
+              ? String(row._id).trim()
               : "";
-          const count =
-            typeof row.count === "number" && Number.isFinite(row.count)
-              ? row.count
-              : 0;
-          return {
-            modelId: id,
-            label: file || id || "Unknown model",
-            count,
-          };
-        },
-      )
+        const file =
+          typeof row.fileName === "string" && row.fileName.trim()
+            ? row.fileName.trim()
+            : "";
+        const count =
+          typeof row.count === "number" && Number.isFinite(row.count)
+            ? row.count
+            : 0;
+        return {
+          modelId: id,
+          label: file || id || "Unknown model",
+          count,
+        };
+      })
       .filter((m) => m.modelId.length > 0);
 
   const userNames = userAgg
@@ -292,7 +303,9 @@ export const getSessionFilterOptions = async (filters: {
       };
     })
     .filter(
-      (u): u is {
+      (
+        u,
+      ): u is {
         autodeskUserName: string;
         fullName: string;
         count: number;
@@ -351,10 +364,7 @@ export const getSessions = async (filters: SessionFilters) => {
           .lean()
       : [];
 
-  const syncsBySessionId = new Map<
-    string,
-    Array<{ _id: unknown; ts: Date }>
-  >();
+  const syncsBySessionId = new Map<string, Array<{ _id: unknown; ts: Date }>>();
   for (const sync of syncDocs) {
     const ts = resolveSyncDate(sync);
     if (!ts) continue;
@@ -433,7 +443,9 @@ export const getSessionById = async (sessionId: string) => {
 
   const orderedSyncs = syncDocs
     .map((sync) => ({ _id: sync._id, ts: resolveSyncDate(sync) }))
-    .filter((s): s is { _id: mongoose.Types.ObjectId; ts: Date } => s.ts !== null)
+    .filter(
+      (s): s is { _id: mongoose.Types.ObjectId; ts: Date } => s.ts !== null,
+    )
     .sort((a, b) => a.ts.getTime() - b.ts.getTime());
 
   const syncTimeline = orderedSyncs.map((sync, index) => {

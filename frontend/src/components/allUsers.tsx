@@ -441,23 +441,35 @@ export default function AllUsers() {
 
   const filteredItems = useMemo(() => {
     return items.filter((item) => {
-      const matchesPluginVersion =
-        selectedPluginVersion === "all" ||
-        (item.pluginVersionDetails && item.pluginVersionDetails.length > 0
+      // If both filters are active, they must intersect in the same pluginVersionDetail
+      if (selectedPluginVersion !== "all" && selectedRevitVersion !== "all") {
+        if (item.pluginVersionDetails && item.pluginVersionDetails.length > 0) {
+          return item.pluginVersionDetails.some(
+            (detail) =>
+              detail.pluginVersion === selectedPluginVersion &&
+              detail.revitVersions.includes(selectedRevitVersion),
+          );
+        }
+        return false;
+      }
+
+      // If only plugin version filter is active
+      if (selectedPluginVersion !== "all") {
+        return item.pluginVersionDetails && item.pluginVersionDetails.length > 0
           ? item.pluginVersionDetails.some(
               (detail) => detail.pluginVersion === selectedPluginVersion,
             )
-          : item.pluginVersions.includes(selectedPluginVersion));
+          : item.pluginVersions.includes(selectedPluginVersion);
+      }
 
-      if (!matchesPluginVersion) return false;
-
-      const matchesRevitVersion =
-        selectedRevitVersion === "all" ||
-        (item.pluginVersionDetails ?? []).some((detail) =>
+      // If only revit version filter is active
+      if (selectedRevitVersion !== "all") {
+        return (item.pluginVersionDetails ?? []).some((detail) =>
           detail.revitVersions.includes(selectedRevitVersion),
         );
+      }
 
-      return matchesRevitVersion;
+      return true; // Both are "all"
     });
   }, [items, selectedPluginVersion, selectedRevitVersion]);
 

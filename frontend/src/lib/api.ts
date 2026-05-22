@@ -27,6 +27,7 @@ export type SessionListItem = {
   autodeskUserName?: string;
   fullName?: string;
   revitVersion?: string;
+  networkConnectionType?: string;
   closingTime?: string | null;
   sessionDuration?: number | string | null;
   crashStatus?: boolean | number | string;
@@ -266,7 +267,9 @@ export type ActiveProjectSummaryItem = {
   activeModelNames: string[];
 };
 
-export async function fetchActiveProjects(): Promise<ActiveProjectSummaryItem[]> {
+export async function fetchActiveProjects(): Promise<
+  ActiveProjectSummaryItem[]
+> {
   const data = await apiFetch<{ projects: ActiveProjectSummaryItem[] }>(
     "/api/active/projects",
   );
@@ -352,10 +355,7 @@ export async function fetchSessionFilterOptions(params: {
   if (params.modelId) {
     query.modelId = params.modelId;
   }
-  return apiFetch<SessionFilterOptions>(
-    "/api/sessions/filter-options",
-    query,
-  );
+  return apiFetch<SessionFilterOptions>("/api/sessions/filter-options", query);
 }
 
 export async function fetchSessionsList(params: {
@@ -371,6 +371,9 @@ export async function fetchSessionsList(params: {
   crashOnly?: boolean;
   /** Only sessions still open (no closing time) */
   liveOnly?: boolean;
+  networkConnectionType?: string;
+  /** Only sessions with 0 syncs */
+  noSyncs?: boolean;
 }): Promise<PaginatedListResponse<SessionListItem>> {
   const query: Record<string, string> = {
     page: String(params.page),
@@ -389,6 +392,12 @@ export async function fetchSessionsList(params: {
   }
   if (params.cloudProjectName) {
     query.cloudProjectName = params.cloudProjectName;
+  }
+  if (params.networkConnectionType) {
+    query.networkConnectionType = params.networkConnectionType;
+  }
+  if (params.noSyncs) {
+    query.noSyncs = "true";
   }
   if (params.crashOnly) {
     query.crashOnly = "true";

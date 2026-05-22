@@ -32,6 +32,12 @@ export const getSessionsController = async (req: Request, res: Response) => {
       : String(liveRaw ?? "");
     const liveOnly = liveStr === "true" || liveStr === "1" || liveStr === "yes";
 
+    const noSyncsRaw = req.query.noSyncs;
+    const noSyncsStr = Array.isArray(noSyncsRaw)
+      ? String(noSyncsRaw[0] ?? "")
+      : String(noSyncsRaw ?? "");
+    const noSyncs = noSyncsStr === "true" || noSyncsStr === "1" || noSyncsStr === "yes";
+
     const filters = {
       limit: Number(req.query.limit) || undefined,
       page: Number(req.query.page) || undefined,
@@ -41,6 +47,9 @@ export const getSessionsController = async (req: Request, res: Response) => {
       modelId: (req.query.modelId as string) || undefined,
       deviceName: (req.query.deviceName as string) || undefined,
       cloudProjectName: (req.query.cloudProjectName as string) || undefined,
+      networkConnectionType:
+        (req.query.networkConnectionType as string) || undefined,
+      noSyncs: noSyncs || undefined,
       crashOnly: crashOnly || undefined,
       liveOnly: liveOnly || undefined,
     };

@@ -101,6 +101,7 @@ export const getUsersSummary = async (): Promise<UserSummary[]> => {
             $ifNull: ["$cbtAssemblyVersion", "$cbtToolsVersion"],
           },
           revitVersion: { $ifNull: ["$revitVersion", ""] },
+          dateTime: 1,
         },
       },
       {
@@ -109,12 +110,24 @@ export const getUsersSummary = async (): Promise<UserSummary[]> => {
         },
       },
       {
+        $sort: { dateTime: -1 },
+      },
+      {
         $group: {
           _id: {
             autodeskUserName: "$autodeskUserName",
-            pluginVersion: "$pluginVersion",
+            revitVersion: "$revitVersion",
           },
-          revitVersions: { $addToSet: "$revitVersion" },
+          latestPluginVersion: { $first: "$pluginVersion" },
+        },
+      },
+      {
+        $group: {
+          _id: {
+            autodeskUserName: "$_id.autodeskUserName",
+            pluginVersion: "$latestPluginVersion",
+          },
+          revitVersions: { $addToSet: "$_id.revitVersion" },
         },
       },
       {
